@@ -27,6 +27,18 @@ beyond it weaken the block. Distinguish from the FVG: the OB is where the move
 *originated*; the FVG is the inefficiency the move *left behind* — together they bracket
 the entry region.
 
+**Selection rules (early teaching, 2020 forex notes)** — still useful as filters:
+
+- Retracement objectives *into* the block, in order: ① proximal edge, ② the candle's
+  open, ③ the midpoint. A retracement **through 50% of the block invalidates it** —
+  fall back to the previous OB behind it.
+- When an OB is broken, the prior OB in the same leg becomes the candidate turning
+  point; keep old blocks marked, they get revisited.
+- After an SMT divergence at a key level, the first/extreme OB rarely holds a retest —
+  prefer the *second* block formed in the new direction, with supporting structure
+  on the left of the chart.
+- A nearby swing low/high can turn price before it precisely tags the block.
+
 ## Detection Rules
 
 - Candidate: candle (or consecutive same-color candles) of color opposite to the
@@ -43,3 +55,4 @@ the entry region.
 - [ICT order block explained — innercircletrader.net](https://innercircletrader.net/tutorials/ict-order-block/)
 - [Order blocks, breakers, mitigation — theicttrader.com](https://theicttrader.com/2024/03/24/order-blocks-breaker-blocks-and-mitigation-blocks/)
 - [Key ICT concepts — tradezella.com](https://www.tradezella.com/learning-items/key-ict-concepts)
+- Selection rules: `strategies/notes/ict-forex-notes-mmari-2020.md` §7 (2020 forex-era ICT)

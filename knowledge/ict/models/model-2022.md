@@ -4,11 +4,13 @@ aliases: [2022 model, 2022 mentorship model]
 category: models
 related: [entry-sequence, daily-bias, liquidity-sweep-stop-hunt, market-structure-shift, fair-value-gap, killzones]
 parameters:
-  entry_timeframes: [1m, 3m, 5m]
-  min_rr: 3
+  entry_timeframe: 3m            # FVGSweepModel entry/MSS timeframe (spec range 1–5m)
+  min_rr: 3                      # target floor; falls back to fixed 3R when nearest pool is closer
   primary_array: fair-value-gap
-  windows: "London & NY killzones"
-detection: not-implemented
+  pool_set: [PDH/PDL, midnight-opening-range, session-swings, relative-equal-highs-lows]
+  killzones: [london, ny_am]     # 02:00–05:00 NY and 07:00–10:00 NY
+  bias: "daily — order flow + draw + premium/discount must align"
+detection: implemented           # FVGSweepModel (src/ict/models/ict/fvg_sweep.py)
 ---
 
 # The 2022 Model

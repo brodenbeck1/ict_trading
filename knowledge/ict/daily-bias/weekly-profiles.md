@@ -27,6 +27,10 @@ Key tendencies:
   profile to stand aside on.
 - Seasonal tendencies (time-of-year directional drift) modulate which profile is more
   probable but never override structure/liquidity evidence.
+- Quantified claim (2020 forex-era notes): the weekly high or low forms **~80% of the
+  time between the Sunday/Monday open and Tuesday's London open**; when it fails, the
+  fallback window is Tuesday's → Wednesday's London open. Testable on ES/NQ/YM —
+  classify weekly-extreme timing in backtests before trusting the 80%.
 
 ## Detection Rules
 
@@ -44,3 +48,4 @@ Key tendencies:
 - [ICT Weekly Range Expansion — innercircletrader.net](https://innercircletrader.net/tutorials/ict-weekly-range-expansion/)
 - [Weekly profiles guide — arongroups.co](https://arongroups.co/technical-analyze/ict-weekly-profiles/)
 - [Macro narrative: weekly profiles & monthly expansion — fxnx.com](https://fxnx.com/en/blog/ict-macro-narrative-weekly-profiles-monthly-expansion)
+- 80% weekly-extreme timing claim: `strategies/notes/ict-forex-notes-mmari-2020.md` §20

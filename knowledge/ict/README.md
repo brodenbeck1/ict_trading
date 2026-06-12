@@ -102,6 +102,7 @@ per-date — never hardcode UTC offsets (DST: EDT = UTC−4, EST = UTC−5).
 | [judas-swing](models/judas-swing.md) | Fading the session-open false move |
 | [market-maker-models](models/market-maker-models.md) | MMBM/MMSM full delivery curve; left side = right side's target ladder |
 | [one-shot-one-kill](models/one-shot-one-kill.md) | One weekly-range trade, Mon–Wed anchor, OTE entry |
+| [three-indians](models/three-indians.md) | Three pushes into a key level + Wolfe-wave geometry; terminal-sweep reversal |
 
 ---
 

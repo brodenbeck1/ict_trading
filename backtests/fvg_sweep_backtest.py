@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-FVG Sweep Model Backtester — NQ NY Session
-===========================================
+FVG Sweep Model Backtester — ICT 2022 Model on NQ
+==================================================
 
-Walk-forward backtest on NQ futures, NY session 8:30–11:00 AM.
-One signal evaluated per trading day. Fixed 1 NQ contract ($20/pt).
+Walk-forward backtest on NQ futures. Sweeps are taken in the London (02:00–05:00 NY)
+and NY AM (07:00–10:00 NY) killzones; one signal evaluated per trading day.
+Fixed 1 NQ contract ($20/pt).
 
 Outputs:
   fvg_sweep_nq_trades.csv   — full trade log
@@ -20,6 +21,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from ict import DataLoader, FVGSweepModel, FVGSweepSnapshot
+from ict.backtest import Mark, TradeViz, build_report
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -68,15 +70,15 @@ def build_snapshot(df_1m: pd.DataFrame, session_date: pd.Timestamp) -> FVGSweepS
     d_naive = pd.Timestamp(session_date.date())
     d = d_naive.tz_localize('UTC') if df_1m.index.tz is not None else d_naive
 
-    # 2m: 5 days back + session day (BMS detection needs some pre-session context)
-    df_2m = (
+    # 3m: 5 days back + session day (entry TF; MSS detection needs pre-session context)
+    df_3m = (
         df_1m.loc[d - pd.Timedelta(days=5) : d + pd.Timedelta(days=1)]
-        .resample('2min').agg({'open': 'first', 'high': 'max', 'low': 'min',
+        .resample('3min').agg({'open': 'first', 'high': 'max', 'low': 'min',
                                'close': 'last', 'volume': 'sum'})
         .dropna(subset=['close'])
     )
 
-    # 15m: 14 days back + session day (REH detection + target finding)
+    # 15m: 14 days back + session day (pool detection)
     df_15m = (
         df_1m.loc[d - pd.Timedelta(days=14) : d + pd.Timedelta(days=1)]
         .resample('15min').agg({'open': 'first', 'high': 'max', 'low': 'min',
@@ -84,37 +86,37 @@ def build_snapshot(df_1m: pd.DataFrame, session_date: pd.Timestamp) -> FVGSweepS
         .dropna(subset=['close'])
     )
 
-    # Weekly: 10 weeks back (up to but not including session day — bias is pre-session)
-    df_weekly = (
-        df_1m.loc[d - pd.Timedelta(weeks=10) : d]
-        .resample('W').agg({'open': 'first', 'high': 'max', 'low': 'min',
+    # Daily: 45 days back, up to (not including) session day — bias is pre-session
+    df_daily = (
+        df_1m.loc[d - pd.Timedelta(days=45) : d - pd.Timedelta(minutes=1)]
+        .resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min',
                             'close': 'last', 'volume': 'sum'})
         .dropna(subset=['close'])
     )
 
     return FVGSweepSnapshot(
-        df_2m=df_2m,
+        df_3m=df_3m,
         df_15m=df_15m,
-        df_weekly=df_weekly,
+        df_daily=df_daily,
         session_date=session_date,
     )
 
 
 # ─── Fill Simulation ─────────────────────────────────────────────────────────
 
-def simulate_fill(df_2m: pd.DataFrame, signal: dict, session_date: pd.Timestamp) -> dict | None:
+def simulate_fill(df_3m: pd.DataFrame, signal: dict, session_date: pd.Timestamp) -> dict | None:
     """
-    Scan 2m bars after entry_time for a limit fill.
+    Scan 3m bars after entry_time for a limit fill.
     Fill window: entry_time → EOD (16:00 NY).
     Short fills when high >= entry; long fills when low <= entry.
     Returns {'fill_time', 'fill_price'} or None.
     """
-    entry_time  = _localize_to(signal['entry_time'], df_2m.index)
+    entry_time  = _localize_to(signal['entry_time'], df_3m.index)
     entry_price = signal['entry']
     direction   = signal['direction']
-    eod         = _eod_utc(session_date, tz_aware=(df_2m.index.tz is not None))
+    eod         = _eod_utc(session_date, tz_aware=(df_3m.index.tz is not None))
 
-    df_fill = df_2m[(df_2m.index > entry_time) & (df_2m.index <= eod)]
+    df_fill = df_3m[(df_3m.index > entry_time) & (df_3m.index <= eod)]
 
     for ts, row in df_fill.iterrows():
         if direction == 'short' and row['high'] >= entry_price:
@@ -127,7 +129,7 @@ def simulate_fill(df_2m: pd.DataFrame, signal: dict, session_date: pd.Timestamp)
 
 # ─── Exit Simulation ─────────────────────────────────────────────────────────
 
-def simulate_exit(df_2m: pd.DataFrame, signal: dict, fill: dict,
+def simulate_exit(df_3m: pd.DataFrame, signal: dict, fill: dict,
                   session_date: pd.Timestamp) -> dict:
     """
     From fill_time → EOD, find first target or stop hit.
@@ -137,10 +139,10 @@ def simulate_exit(df_2m: pd.DataFrame, signal: dict, fill: dict,
     direction  = signal['direction']
     target     = signal['target']
     stop       = signal['stop']
-    fill_time  = _localize_to(fill['fill_time'], df_2m.index)
-    eod        = _eod_utc(session_date, tz_aware=(df_2m.index.tz is not None))
+    fill_time  = _localize_to(fill['fill_time'], df_3m.index)
+    eod        = _eod_utc(session_date, tz_aware=(df_3m.index.tz is not None))
 
-    df_after = df_2m[(df_2m.index > fill_time) & (df_2m.index <= eod)]
+    df_after = df_3m[(df_3m.index > fill_time) & (df_3m.index <= eod)]
 
     for ts, row in df_after.iterrows():
         if direction == 'short':
@@ -277,6 +279,75 @@ def plot_equity_curve(trades: pd.DataFrame, path: str):
     print(f"Equity curve → {path}")
 
 
+# ─── Plotly Report Adapter (model-specific) ──────────────────────────────────
+
+# Default-on groups stay visible; the rest start collapsed (legendonly).
+C_ENTRY, C_STOP, C_TARGET = '#1f77b4', '#c0392b', '#1a8a4a'
+C_FVG, C_SWEEP, C_MSS, C_BIAS = '#f39c12', '#8e44ad', '#16a085', '#7f8c8d'
+
+
+def _window(df: pd.DataFrame, lo: pd.Timestamp, hi: pd.Timestamp) -> pd.DataFrame:
+    lo = _localize_to(lo, df.index)
+    hi = _localize_to(hi, df.index)
+    return df.loc[lo:hi]
+
+
+def trade_panels(snap: FVGSweepSnapshot, session_ts: pd.Timestamp) -> dict:
+    """Windowed candlestick frames for the three timeframes the model used."""
+    d = pd.Timestamp(session_ts.date())
+    return {
+        'daily': snap.df_daily.tail(30),
+        '15m':   _window(snap.df_15m, d - pd.Timedelta(days=5), d + pd.Timedelta(days=1)),
+        '3m':    _window(snap.df_3m,  d, d + pd.Timedelta(days=1)),
+    }
+
+
+def signal_to_marks(signal: dict, fill: dict, exit_info: dict) -> list:
+    """Translate an FVGSweep signal into report overlays grouped for toggling."""
+    direction = signal['direction']
+    marks = []
+
+    # — Entry / Stop / Target (default on) —
+    g = 'Entry/Stop/Target'
+    marks += [
+        Mark('level', g, '3m', f"Entry {signal['entry']:.2f}", C_ENTRY, price=signal['entry']),
+        Mark('level', g, '3m', f"Stop {signal['stop']:.2f}", C_STOP, dash='dash', price=signal['stop']),
+        Mark('level', g, '3m', f"Target {signal['target']:.2f}", C_TARGET, dash='dash', price=signal['target']),
+        Mark('marker', g, '3m', "Fill", C_ENTRY, time=fill['fill_time'], price=fill['fill_price'], symbol='circle'),
+    ]
+    if exit_info:
+        col = C_TARGET if exit_info['exit_reason'] == 'target' else (C_STOP if exit_info['exit_reason'] == 'stop' else C_BIAS)
+        marks.append(Mark('marker', g, '3m', f"Exit ({exit_info['exit_reason']})", col,
+                          time=exit_info['exit_time'], price=exit_info['exit_price'], symbol='x'))
+
+    # — FVG zone (default on) —
+    if signal.get('fvg_top') is not None:
+        marks.append(Mark('zone', 'FVG', '3m', "FVG", C_FVG,
+                          y0=signal['fvg_bottom'], y1=signal['fvg_top'],
+                          t0=signal['entry_time'],
+                          t1=(exit_info['exit_time'] if exit_info else None)))
+
+    # — Sweep (default off): point on 3m + swept pool level on 15m —
+    if signal.get('sweep_time') is not None:
+        lbl = f"Sweep {signal.get('swept_pool') or ''}".strip()
+        marks.append(Mark('marker', 'Sweep', '3m', lbl, C_SWEEP,
+                          time=signal['sweep_time'], price=signal['sweep_level'],
+                          symbol='x', default_on=False))
+        marks.append(Mark('level', 'Sweep', '15m', f"Swept pool {signal['sweep_level']:.2f}",
+                          C_SWEEP, dash='dot', price=signal['sweep_level'], default_on=False))
+
+    # — MSS (default off) —
+    if signal.get('bms_time') is not None:
+        sym = 'triangle-down' if direction == 'short' else 'triangle-up'
+        marks.append(Mark('marker', 'MSS', '3m', f"MSS {signal['bms_swing_level']:.2f}", C_MSS,
+                          time=signal['bms_time'], price=signal['bms_swing_level'],
+                          symbol=sym, default_on=False))
+        marks.append(Mark('level', 'MSS', '3m', "MSS swing", C_MSS, dash='dot',
+                          price=signal['bms_swing_level'], default_on=False))
+
+    return marks
+
+
 # ─── Main Loop ───────────────────────────────────────────────────────────────
 
 def run_backtest():
@@ -310,6 +381,7 @@ def run_backtest():
 
     model      = FVGSweepModel()
     trade_log  = []
+    viz_trades = []
     n_signals  = 0
     n_no_fill  = 0
     n_errors   = 0
@@ -330,12 +402,12 @@ def run_backtest():
 
         n_signals += 1
 
-        fill = simulate_fill(snap.df_2m, signal, session_ts)
+        fill = simulate_fill(snap.df_3m, signal, session_ts)
         if fill is None:
             n_no_fill += 1
             continue
 
-        exit_info = simulate_exit(snap.df_2m, signal, fill, session_ts)
+        exit_info = simulate_exit(snap.df_3m, signal, fill, session_ts)
 
         pnl_pts = calc_pnl_pts(signal['direction'], fill['fill_price'], exit_info['exit_price'])
         pnl_usd = round(pnl_pts * NQ_DOLLARS_PER_POINT, 2)
@@ -355,6 +427,14 @@ def run_backtest():
             'pnl_pts':      round(pnl_pts, 2),
             'pnl_usd':      pnl_usd,
         })
+
+        # Capture the rich per-trade view for the Plotly report
+        viz_trades.append(TradeViz(
+            label=f"{day}  {signal['direction'].upper()}  ${pnl_usd:,.0f}",
+            panels=trade_panels(snap, session_ts),
+            marks=signal_to_marks(signal, fill, exit_info),
+            pnl=pnl_usd,
+        ))
 
         if (i + 1) % 50 == 0:
             pnl_so_far = sum(t['pnl_usd'] for t in trade_log)
@@ -393,9 +473,30 @@ def run_backtest():
         print(f"  {str(month):<10} {len(grp):>6}  {w:>4}  "
               f"{grp['pnl_pts'].sum():>9.1f}  {grp['pnl_usd'].sum():>9,.0f}")
 
-    # Equity curve
+    # Equity curve (static PNG)
     chart_path = os.path.join(OUT_DIR, 'fvg_sweep_nq_equity.png')
     plot_equity_curve(trades, chart_path)
+
+    # Interactive multi-timeframe Plotly report
+    report_stats = {
+        'Trades': stats['total_trades'],
+        'Win rate': f"{stats['win_rate']}%  ({stats['wins']}W / {stats['losses']}L / {stats['eods']} EOD)",
+        'Total P&L': f"${stats['total_pnl_usd']:,.2f}  ({stats['total_pnl_pts']:.1f} pts)",
+        'Avg R:R (setup)': stats['avg_rr'],
+        'Profit factor': stats['profit_factor'],
+        'Max drawdown': f"${stats['max_dd_usd']:,.2f}",
+        'Sharpe': stats['sharpe_ratio'],
+    }
+    report_path = os.path.join(OUT_DIR, 'fvg_sweep_nq_report.html')
+    build_report(
+        trades=viz_trades,
+        panel_order=['daily', '15m', '3m'],
+        out_path=report_path,
+        title=f'ICT 2022 Model — NQ  {START_DATE}→',
+        equity=trades['pnl_usd'].cumsum(),
+        stats=report_stats,
+    )
+    print(f"Interactive report → {report_path}")
 
 
 if __name__ == '__main__':

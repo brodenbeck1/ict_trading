@@ -25,6 +25,11 @@ day's extreme with the whole expansion as the runway.
 As a tradable model: bias must be pre-established; the Judas swing is the *sweep step*
 of the entry sequence, traded once MSS confirms — not faded blindly.
 
+Session-stop rotation (which pool the Judas hunts): trading London → expect the raid
+on **Asian** session stops; trading NY → on **London** stops; trading Asia → on **NY**
+stops. The 2020 forex-era notes also flag recurring Judas times at 10:00 GMT (sets up
+the NY OTE) and 15:00 GMT (sets up the London-close trade).
+
 ## Detection Rules
 
 - Reference levels: midnight open, session opening price, Asia range extremes.
@@ -41,3 +46,4 @@ of the entry sequence, traded once MSS confirms — not faded blindly.
 - [Power of 3 / manipulation — innercircletrader.net](https://innercircletrader.net/tutorials/ict-power-of-3/)
 - [Judas swing London trap — fxnx.com](https://fxnx.com/en/blog/mastering-ict-judas-swing-gold-trading-london-trap)
 - [Daily bias, killzones & judas — tradingstrategyguides.com](https://tradingstrategyguides.com/day-16-how-to-build-an-ict-trade-plan-daily-bias-kill-zones-judas-swing/)
+- Session-stop rotation & Judas times: `strategies/notes/ict-forex-notes-mmari-2020.md` §17

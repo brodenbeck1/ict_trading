@@ -19,7 +19,10 @@ not genuine weakness — bullish signal. At a high: one prints a higher high whi
 other makes a lower high → bearish.
 
 ES/NQ is the canonical futures pair (tight correlation, predictable delivery); YM as a
-third vote raises confidence. SMT is a **confirmation layer, not a standalone signal**:
+third vote raises confidence. Instrument-selection rule from the forex-era teaching
+carries over: **trade the instrument that refused to confirm** — at a low, buy the one
+that held the higher low (demand in operation); at a high, sell the one that failed to
+make the higher high (supply in operation). SMT is a **confirmation layer, not a standalone signal**:
 it grades a sweep (sweep + SMT > sweep alone) and is strongest when it appears at a
 HTF PD array inside a killzone, alongside an MSS.
 
@@ -42,3 +45,4 @@ the base model.
 - [ICT SMT divergence — innercircletrader.net](https://innercircletrader.net/tutorials/ict-smt-divergence-smart-money-technique/)
 - [SMT in futures (ES/NQ) — metrotrade.com](https://www.metrotrade.com/smt-trading-futures/)
 - [SMT identification — tradingfinder.com](https://tradingfinder.com/education/forex/ict-smt-divergence/)
+- Stronger/weaker selection rule: `strategies/notes/ict-forex-notes-mmari-2020.md` §6

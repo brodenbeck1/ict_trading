@@ -22,6 +22,12 @@ structure **against** the trend (potential reversal); BOS breaks it **with** the
 library taxonomy, classify by direction relative to trend: with-trend = BOS,
 counter-trend with displacement = MSS.
 
+Related early-era term — **market flow**: the trend state defined by only the *most
+recent* swing pair (recent swing high broken ⇒ flow bullish until the most recent
+swing low breaks; old swings disregarded). The 2020 forex notes' alignment rule maps
+to this file's trend state machine: D1/H4/H1 flow in agreement = tradeable; structure
+and flow in conflict or unclear = stand aside.
+
 ## Detection Rules
 
 - Maintain trend state from the swing series (HH/HL sequence = up; LH/LL = down).
@@ -35,3 +41,4 @@ counter-trend with displacement = MSS.
 - [MSS vs BOS — equiti.com](https://www.equiti.com/sc-en/news/trading-ideas/mss-vs-bos-the-ultimate-guide-to-mastering-market-structure/)
 - [Market Structure Shift in ICT — fxopen.com](https://fxopen.com/blog/en/market-structure-shift-meaning-and-use-in-ict-trading/)
 - [MSS explained — icttrading.org](https://icttrading.org/market-structure-shift/)
+- "Market flow" terminology: `strategies/notes/ict-forex-notes-mmari-2020.md` §3

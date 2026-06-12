@@ -27,6 +27,18 @@ liquidity scaffolding:
 - **Session highs/lows** — London H/L, NY pre-market H/L: standing intraday pools
   (see [liquidity-pools](../liquidity/liquidity-pools.md)).
 
+**Flout projection recipe (2020 forex-era variant)** — the Mmari notes define the
+"flout" as the 20:00–00:00 GMT consolidation and measure the projection base off
+candle **bodies** (wicks ignored) over 20:00–05:00 GMT: the day's high (sell days)
+forms ≈ **+1 range-height deviation** above the base, the target/low ≈ **−2 deviations**
+(reversal-profile days stretch to ±2 entry / −3 target). Best Monday–Wednesday; no
+trades inside the base window. Note the window conflicts with the NY-time CBDR/flout
+definitions above — those stay canonical; keep this as the deviation-count reference.
+
+**5-day ADR targeting** (same source): align trade expectations to the 5-day average
+daily range — 5 contracted days ⇒ expect expansion; take profit at 80–90% of ADR
+rather than the extreme; if ADR is exceeded, fib the ADR low→high for extensions.
+
 ## Detection Rules
 
 - Compute ranges as `(max(high), min(low))` over the session mask (NY-local windows
@@ -41,3 +53,4 @@ liquidity scaffolding:
 - [Killzones & session times — innercircletrader.net](https://innercircletrader.net/tutorials/master-ict-kill-zones/)
 - [Time & price research (CBDR, Asia, flout) — time-price-research-astrofin.blogspot.com](https://time-price-research-astrofin.blogspot.com/p/off-topic.html)
 - Project convention: CLAUDE.md session windows (UTC)
+- Flout deviations & ADR: `strategies/notes/ict-forex-notes-mmari-2020.md` §16 (2020 forex-era ICT)

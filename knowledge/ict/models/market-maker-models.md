@@ -30,6 +30,15 @@ the right side — each left-side consolidation/low is a right-side objective. T
 is where reversal models (turtle soup, unicorn) fire; the right side is where
 continuation entries (mitigation blocks, OTE) stack.
 
+**Early 6-phase enumeration (2020 forex-era buy model)**: ① consolidation at HTF
+resistance/bearish OB → ② run to support (break + retest of the consolidation) →
+③ smart money reversal (buy OTE at key support) → ④ accumulation (low-risk buys) →
+⑤ re-accumulation at/near the prior accumulation → ⑥ distribution after the stops
+above it are taken. The **re-accumulation stage is the continuation/reversal tell**:
+HTF-bearish ⇒ price respects the *low* of the prior accumulation and rolls over;
+HTF-bullish ⇒ price trades above it, stopping out counter-trend shorts. Phases ①/③/⑥
+are the actionable zones.
+
 ## Detection Rules
 
 - Hard to detect prospectively in full; decompose: consolidation detection (range
@@ -46,3 +55,4 @@ continuation entries (mitigation blocks, OTE) stack.
 - [Market maker sell model — innercircletrader.net](https://innercircletrader.net/tutorials/ict-market-maker-sell-model/)
 - [MMXM overview — michaeljhuddleston.org](https://michaeljhuddleston.org/notes/ict-market-maker-model-mmxm-trade-with-smart-money-not-against-it/)
 - [MMXM components — tradingview.com](https://www.tradingview.com/script/4eQPT3aC-MMXM-ICT-TradingFinder-Market-Maker-Model-PO3-CHoCH-CSID-FVG/)
+- 6-phase early version + re-accumulation tell: `strategies/notes/ict-forex-notes-mmari-2020.md` §11

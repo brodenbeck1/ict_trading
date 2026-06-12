@@ -11,6 +11,7 @@ dependencies = [
     "pandas",
     "numpy",
     "matplotlib",
+    "plotly",
     "python-frontmatter",
 ]
 

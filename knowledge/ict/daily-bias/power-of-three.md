@@ -38,6 +38,9 @@ agreeing).
   direction of the manipulation sweep.
 - Backtest label: day exhibits PO3 if `range_breakout_first_side != side_of_close` and
   close is in the outer third of the day's range.
+- Stricter variant (2020 forex-era notes): on a textbook PO3 day the **open sits in the
+  outer ~20% of the range nearest the manipulation extreme and the close in the outer
+  ~20% at the other end** — use 0.20 instead of the outer-third rule as a config flag.
 
 ## Sources
 
@@ -45,3 +48,4 @@ agreeing).
 - [ICT PO3 — fxopen.com](https://fxopen.com/blog/en/what-is-ict-po3-and-how-do-traders-use-it/)
 - [PO3 three phases — tradingfinder.com](https://tradingfinder.com/education/forex/ict-power-of-three/)
 - [What is ICT Power of 3 — arongroups.co](https://arongroups.co/technical-analyze/power-of-3/)
+- 20% open/close anatomy: `strategies/notes/ict-forex-notes-mmari-2020.md` §8

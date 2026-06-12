@@ -31,6 +31,13 @@ For ES/NQ/YM, the NY AM killzone (8:30–11:00 NY = 12:30–15:00 / 13:30–16:0
 DST) matches the project's standard setup window from the elements-of-a-trade-setup
 note.
 
+**Source variant (2020 forex-era ICT, GMT)** — the Mmari notes define the windows as
+Asian 23:00–03:00, London open 06:00–10:00 (ideal 07:00–09:00), NY open 12:00–15:00,
+London close 15:00–18:00 GMT, each ±1 h; the "true trading day" runs 05:00–19:00 GMT
+and the day's high/low most often prints **09:00–09:30 GMT** with a counter-move
+(Judas) expected around 10:00 GMT. Historical/forex calibration — the NY-time table
+above stays canonical for ES/NQ/YM.
+
 ## Detection Rules
 
 - Implement as boolean masks over the DatetimeIndex, computed in `America/New_York`
@@ -44,3 +51,4 @@ note.
 
 - [ICT killzones — all 4 session times — innercircletrader.net](https://innercircletrader.net/tutorials/master-ict-kill-zones/)
 - [Killzones explained — tradingrage.com](https://tradingrage.com/learn/ict-killzone-explained)
+- GMT variant: `strategies/notes/ict-forex-notes-mmari-2020.md` §9 (2020 forex-era ICT)

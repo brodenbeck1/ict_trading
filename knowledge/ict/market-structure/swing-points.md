@@ -6,7 +6,7 @@ related: [break-of-structure, market-structure-shift, buyside-sellside-liquidity
 parameters:
   swing_definition: "3-bar (project decision): bar N is a swing low if low[N] < low[N-1] and low[N] < low[N+1]; mirror for highs"
   confirmation_lag: "1 bar (3-bar swing confirms one bar after the pivot)"
-detection: implemented   # trading_models/liquidity_pools/swing_points.py (SwingPointScanner)
+detection: implemented   # src/ict/concepts/market_structure.py (@concept("swing-points"))
 ---
 
 # Swing Points
@@ -39,4 +39,4 @@ break constitutes a meaningful structure event vs. noise.
 
 - [Market structure shift guide — innercircletrader.net](https://innercircletrader.net/tutorials/ict-market-structure-shift/)
 - Project decision log: `strategies/notes/ict-elements-of-a-trade-setup.md` (3-bar swing)
-- Project code: `trading_models/liquidity_pools/swing_points.py`
+- Project code: `src/ict/concepts/market_structure.py`

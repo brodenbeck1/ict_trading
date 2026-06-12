@@ -1,28 +1,34 @@
 """
-FVG Sweep Model
-===============
+FVG Sweep Model  —  ICT 2022 Model
+==================================
 
-ICT intraday setup: liquidity sweep + break of market structure + fair value gap entry.
+This is the formal implementation of ICT's 2022 mentorship model — the canonical
+``context -> sweep -> MSS w/ displacement -> retrace into FVG -> deliver to draw``
+entry sequence. See ``knowledge/ict/models/model-2022.md`` and
+``knowledge/ict/entries/entry-sequence.md``.
 
 Checklist (bearish — inverted for bullish):
-  1. Weekly bias is bearish
-  2. Relative equal highs identified on 15m (buy stops resting above)
-  3. Price sweeps above those highs during NY session window
-  4. Break of 3-bar market structure on 2m after the sweep
-  5. Fair Value Gap left by the displacement candle
-  6. Enter short at limit (top of FVG)
-  7. Stop at the high of the swept swing high
-  8. Target: nearest swing low below the 50% of session range
+  1. **Daily bias** from the daily chart: order flow + draw-on-liquidity +
+     premium/discount must all agree (else neutral → no trade).
+  2. **Mark session liquidity** — the pool set: PDH/PDL, the midnight opening
+     range, session swing highs/lows and relative-equal highs/lows.
+  3. **Sweep** — a buy-side pool above (bearish) is raided inside the London or
+     NY killzone — the Judas move against bias.
+  4. **MSS with displacement** on the 3m chart in the bias direction; the
+     displacement candle must leave a Fair Value Gap.
+  5. **Entry**: limit in that FVG on the retrace. **Stop**: beyond the swept
+     extreme. **Target**: opposing liquidity, with a minimum 1:3 R:R floor
+     (fall back to a fixed 3R target when the nearest opposing pool is closer
+     than 3R).
 
-Source: ICT — "Elements of a Trade Setup"
-Rules: trading_models/strategies/notes/ict-elements-of-a-trade-setup.md
+Source: ICT 2022 mentorship model. Rules: knowledge/ict/models/model-2022.md
 """
 
 import pandas as pd
-import numpy as np
 from dataclasses import dataclass
 from typing import Optional
 
+from ict.registry import concept
 from ict.concepts.market_structure import SwingPointScanner
 from ict.concepts.fair_value_gap import find_fvgs, FVG
 
@@ -33,37 +39,45 @@ class FVGSweepSnapshot:
     Data container for the FVGSweepModel.
 
     Attributes:
-        df_2m:       2-minute bars for the session (entry timeframe)
-        df_15m:      15-minute bars covering recent history (swing/REH detection)
-        df_weekly:   Weekly bars for bias determination
+        df_3m:        3-minute bars for the session (entry timeframe)
+        df_15m:       15-minute bars covering recent history (pool detection)
+        df_daily:     Daily bars for bias determination (pre-session)
         session_date: The calendar date being analyzed (tz-naive, local date)
     """
-    df_2m: pd.DataFrame
+    df_3m: pd.DataFrame
     df_15m: pd.DataFrame
-    df_weekly: pd.DataFrame
+    df_daily: pd.DataFrame
     session_date: pd.Timestamp
 
 
+@concept("model-2022")
 class FVGSweepModel:
     """
-    ICT Fair Value Gap + Liquidity Sweep intraday model.
+    ICT 2022 Model — Fair Value Gap + Liquidity Sweep intraday model.
 
     Config keys:
-        eq_tolerance_pts  float  Point tolerance to pair two swing highs/lows as equal (default 5)
-        swing_lookback    int    Candles each side for 3-bar swing (default 1)
-        session_start_ny  str    NY session open time 'HH:MM' (default '08:30')
-        session_end_ny    str    NY session end time 'HH:MM' (default '11:00')
-        weekly_lookback   int    Recent weekly bars for bias vote (default 4)
+        eq_tolerance_pts      float  Points within which swing highs/lows form an equal pair (default 5)
+        swing_lookback        int    Candles each side for a 3-bar swing (default 1)
+        killzones             list   [(start,end), ...] NY-local 'HH:MM' windows the sweep may occur in
+        daily_lookback        int    Recent daily bars for the order-flow vote (default 5)
+        dealing_range_days    int    Daily bars defining the premium/discount dealing range (default 20)
+        reh_lookback_days     int    Days back to scan for 15m relative-equal pools (default 5)
+        opening_range_minutes int    Minutes after NY midnight defining the opening range (default 30)
+        max_bars_sweep_to_mss int    Cap on 3m bars between sweep and MSS (default 30)
+        target_min_rr         float  Minimum (and fallback fixed) reward:risk for the target (default 3.0)
     """
 
     DEFAULT_CONFIG = {
-        'eq_tolerance_pts': 5.0,   # points within which two swing highs/lows form an equal pair
+        'eq_tolerance_pts': 5.0,
         'swing_lookback': 1,
-        'session_start_ny': '09:30',
-        'session_end_ny': '11:00',
-        'weekly_lookback': 4,
+        # London KZ (02:00–05:00 NY) and NY AM KZ (07:00–10:00 NY)
+        'killzones': [('02:00', '05:00'), ('07:00', '10:00')],
+        'daily_lookback': 5,
+        'dealing_range_days': 20,
         'reh_lookback_days': 5,
-        'target_rr': 1.5,          # fixed reward:risk ratio for target placement
+        'opening_range_minutes': 30,
+        'max_bars_sweep_to_mss': 30,
+        'target_min_rr': 3.0,
     }
 
     def __init__(self, config: Optional[dict] = None):
@@ -74,30 +88,164 @@ class FVGSweepModel:
         self.checks.append(msg)
 
     # ------------------------------------------------------------------
-    # Step 1: Weekly bias
+    # Timezone helpers
     # ------------------------------------------------------------------
 
-    def _weekly_bias(self, weekly_df: pd.DataFrame) -> str:
-        n = self.config['weekly_lookback']
-        if len(weekly_df) < n:
-            self._log("Weekly bias: insufficient data → neutral")
+    def _localize_like(self, ts: pd.Timestamp, ref: pd.DatetimeIndex) -> pd.Timestamp:
+        """Make ts tz-aware/naive to match ref index."""
+        if ref.tz is not None and ts.tz is None:
+            return ts.tz_localize(ref.tz)
+        if ref.tz is None and ts.tz is not None:
+            return ts.replace(tzinfo=None)
+        return ts
+
+    @staticmethod
+    def _ny_index(df: pd.DataFrame) -> pd.DatetimeIndex:
+        """Return df.index converted to America/New_York (assume UTC if tz-naive)."""
+        idx = df.index
+        if idx.tz is None:
+            idx = idx.tz_localize('UTC')
+        return idx.tz_convert('America/New_York')
+
+    # ------------------------------------------------------------------
+    # Step 1: Daily bias — order flow + draw + premium/discount
+    # ------------------------------------------------------------------
+
+    def _daily_bias(self, daily_df: pd.DataFrame) -> str:
+        """
+        ICT daily bias from the daily chart. Bullish requires ALL THREE signals
+        bullish; bearish requires all three bearish; otherwise neutral.
+
+          1. Order flow  — net delivery of recent daily candles (close drift +
+             majority of up/down closes).
+          2. Draw        — which untaken daily swing pool (high above / low below)
+             is the nearer magnet to current price.
+          3. Premium/discount — is price in the discount (favors long) or premium
+             (favors short) half of the recent dealing range.
+        """
+        n = self.config['daily_lookback']
+        if daily_df is None or len(daily_df) < max(n, 3):
+            self._log("Daily bias: insufficient data → neutral")
             return 'neutral'
-        recent = weekly_df.tail(n).dropna(subset=['open', 'close'])
-        bearish = (recent['close'] < recent['open']).sum()
-        bullish = (recent['close'] >= recent['open']).sum()
-        threshold = max(2, int(n * 0.6))
-        if bearish >= threshold:
-            self._log(f"Weekly bias: bearish ({bearish}/{n} bars)")
-            return 'bearish'
-        if bullish >= threshold:
-            self._log(f"Weekly bias: bullish ({bullish}/{n} bars)")
+
+        order_flow = self._daily_order_flow(daily_df, n)
+        draw = self._daily_draw(daily_df)
+        prem_disc = self._daily_premium_discount(daily_df)
+
+        if order_flow == draw == prem_disc == 'bullish':
+            self._log("Daily bias: BULLISH (order flow + draw + discount aligned)")
             return 'bullish'
-        self._log(f"Weekly bias: neutral (bearish={bearish}, bullish={bullish})")
+        if order_flow == draw == prem_disc == 'bearish':
+            self._log("Daily bias: BEARISH (order flow + draw + premium aligned)")
+            return 'bearish'
+
+        self._log(
+            f"Daily bias: neutral (order_flow={order_flow}, draw={draw}, "
+            f"premium_discount={prem_disc})"
+        )
         return 'neutral'
 
+    def _daily_order_flow(self, daily_df: pd.DataFrame, n: int) -> str:
+        recent = daily_df.tail(n).dropna(subset=['open', 'close'])
+        if len(recent) < 2:
+            return 'neutral'
+        net = recent['close'].iloc[-1] - recent['close'].iloc[0]
+        up = int((recent['close'] > recent['open']).sum())
+        down = int((recent['close'] < recent['open']).sum())
+        if net > 0 and up >= down:
+            return 'bullish'
+        if net < 0 and down >= up:
+            return 'bearish'
+        return 'neutral'
+
+    def _daily_draw(self, daily_df: pd.DataFrame) -> str:
+        window = daily_df.tail(self.config['dealing_range_days'])
+        scanner = SwingPointScanner(window, lookback=self.config['swing_lookback'])
+        scanner.identify_swings()
+        last_close = float(daily_df['close'].iloc[-1])
+
+        highs = scanner.swing_highs['swing_high_price'].dropna() if scanner.swing_highs is not None else pd.Series(dtype=float)
+        lows = scanner.swing_lows['swing_low_price'].dropna() if scanner.swing_lows is not None else pd.Series(dtype=float)
+
+        highs_above = highs[highs > last_close]
+        lows_below = lows[lows < last_close]
+        nearest_high = float(highs_above.min()) if len(highs_above) else None
+        nearest_low = float(lows_below.max()) if len(lows_below) else None
+
+        if nearest_high is not None and nearest_low is not None:
+            dist_up = nearest_high - last_close
+            dist_down = last_close - nearest_low
+            return 'bullish' if dist_up <= dist_down else 'bearish'
+        if nearest_high is not None:
+            return 'bullish'
+        if nearest_low is not None:
+            return 'bearish'
+        return 'neutral'
+
+    def _daily_premium_discount(self, daily_df: pd.DataFrame) -> str:
+        window = daily_df.tail(self.config['dealing_range_days'])
+        rng_hi = float(window['high'].max())
+        rng_lo = float(window['low'].min())
+        if rng_hi <= rng_lo:
+            return 'neutral'
+        mid = (rng_hi + rng_lo) / 2
+        last_close = float(daily_df['close'].iloc[-1])
+        # Discount (below mid) favors longs; premium (above mid) favors shorts.
+        return 'bullish' if last_close < mid else 'bearish'
+
     # ------------------------------------------------------------------
-    # Step 2: Relative equal highs / lows
+    # Step 2: Build the session-liquidity pool set
     # ------------------------------------------------------------------
+
+    def _build_pools(self, snapshot: FVGSweepSnapshot, before: pd.Timestamp) -> dict:
+        """
+        Assemble the 2022-model pool set, split by side.
+
+        Returns {'highs': [pool, ...], 'lows': [pool, ...]} where each pool is
+        {'extreme_price', 'price', 'source'}. 'highs' are buy-side pools above
+        (sweep targets when bearish); 'lows' are sell-side pools below.
+        """
+        highs: list = []
+        lows: list = []
+
+        # --- PDH / PDL: the last completed daily bar before the session ---
+        daily = snapshot.df_daily
+        if daily is not None and len(daily) > 0:
+            before_daily = self._localize_like(before, daily.index)
+            prior = daily[daily.index < before_daily]
+            if len(prior) > 0:
+                pdh = float(prior['high'].iloc[-1])
+                pdl = float(prior['low'].iloc[-1])
+                highs.append({'extreme_price': pdh, 'price': pdh, 'source': 'PDH'})
+                lows.append({'extreme_price': pdl, 'price': pdl, 'source': 'PDL'})
+
+        # --- Midnight opening range (00:00 → +opening_range_minutes NY) ---
+        orng = self._opening_range(snapshot.df_3m, snapshot.session_date)
+        if orng is not None:
+            highs.append({'extreme_price': orng['high'], 'price': orng['high'], 'source': 'OR-high'})
+            lows.append({'extreme_price': orng['low'], 'price': orng['low'], 'source': 'OR-low'})
+
+        # --- 15m session swing highs/lows + relative-equal clusters ---
+        for cl in self._find_rel_equal_levels(snapshot.df_15m, before, 'bearish'):
+            cl['source'] = f"REH×{cl['count']}"
+            highs.append(cl)
+        for cl in self._find_rel_equal_levels(snapshot.df_15m, before, 'bullish'):
+            cl['source'] = f"REL×{cl['count']}"
+            lows.append(cl)
+
+        self._log(f"Pools: {len(highs)} buy-side / {len(lows)} sell-side")
+        return {'highs': highs, 'lows': lows}
+
+    def _opening_range(self, df_3m: pd.DataFrame, session_date: pd.Timestamp) -> Optional[dict]:
+        """High/low of the NY midnight opening range on the session date."""
+        ny = self._ny_index(df_3m)
+        mins = ny.hour * 60 + ny.minute
+        on_date = ny.date == session_date.date()
+        in_or = on_date & (mins >= 0) & (mins < self.config['opening_range_minutes'])
+        bars = df_3m[in_or]
+        if len(bars) == 0:
+            return None
+        return {'high': float(bars['high'].max()), 'low': float(bars['low'].min())}
 
     def _find_rel_equal_levels(
         self,
@@ -106,29 +254,20 @@ class FVGSweepModel:
         direction: str,
     ) -> list:
         """
-        Find untested 15m swing highs (bearish) or swing lows (bullish) in the
-        lookback window.
+        Untested 15m swing highs (bearish) or lows (bullish) in the lookback
+        window — singletons and equal-clusters alike. A level already swept
+        before the session open is dropped (its stops are gone).
 
-        A valid level is:
-          - A single 15m swing high/low, OR
-          - Two or more within eq_tolerance_pts of each other (equal highs/lows)
-
-        A level is skipped if it was already taken (swept) by a subsequent bar
-        before the session open — meaning the buy/sell stops are no longer resting there.
-
-        Returns list of dicts: {price, extreme_price, timestamps, count}
-          - price: mean of the cluster (or the single price)
-          - extreme_price: highest high (bearish) or lowest low (bullish) — sweep trigger
+        Returns list of {price, extreme_price, timestamps, count}.
         """
+        before = self._localize_like(before, df_15m.index)
         lookback_start = before - pd.Timedelta(days=self.config['reh_lookback_days'])
-        lookback_start = self._localize_like(lookback_start, df_15m.index)
         df = df_15m[(df_15m.index >= lookback_start) & (df_15m.index < before)].copy()
         if len(df) < 3:
             return []
 
         scanner = SwingPointScanner(df, lookback=self.config['swing_lookback'])
         scanner.identify_swings()
-
         tol = self.config['eq_tolerance_pts']
 
         if direction == 'bearish':
@@ -151,11 +290,9 @@ class FVGSweepModel:
         for i, (ts, price) in enumerate(prices.items()):
             if i in used:
                 continue
-            # Group this swing with any other within tolerance
             similar = prices[(prices >= price - tol) & (prices <= price + tol)]
             extreme = extreme_fn(similar.values)
 
-            # Skip if the level was already swept before the session open
             last_ts = max(similar.index)
             df_after_cluster = df[df.index > last_ts]
             if was_taken(extreme, df_after_cluster):
@@ -177,72 +314,50 @@ class FVGSweepModel:
         return clusters
 
     # ------------------------------------------------------------------
-    # Step 3: Stop hunt / sweep detection
+    # Step 3: Sweep detection (inside a killzone)
     # ------------------------------------------------------------------
 
     def _detect_sweep(
         self,
         session_df: pd.DataFrame,
-        clusters: list,
+        pools: list,
         direction: str,
     ) -> Optional[dict]:
-        """
-        Returns the first candle that sweeps above (bearish) or below (bullish)
-        a relative equal level.
-        """
-        bars = list(session_df.iterrows())
-        for i, (ts, row) in enumerate(bars):
+        """First killzone candle that sweeps a buy-side pool (bearish) or
+        sell-side pool (bullish), approached from the correct side."""
+        for i, (ts, row) in enumerate(session_df.iterrows()):
             prior_bars = session_df.iloc[:i]
-            for cluster in clusters:
-                if direction == 'bearish' and row['high'] > cluster['extreme_price']:
-                    # Require at least one prior session bar was at or below the REH
-                    # (price must approach from below — not just open above it)
-                    if i == 0 or prior_bars['low'].min() > cluster['extreme_price']:
-                        continue
-                    self._log(
-                        f"Stop hunt: swept REH at {cluster['extreme_price']:.2f} "
-                        f"@ {ts} (sweep candle high {row['high']:.2f})"
-                    )
-                    return {
-                        'sweep_time': ts,
-                        'sweep_candle_high': float(row['high']),
-                        'cluster': cluster,
-                        'stop_level': float(row['high']),
-                    }
-                if direction == 'bullish' and row['low'] < cluster['extreme_price']:
-                    # Require at least one prior session bar was at or above the REL
-                    if i == 0 or prior_bars['high'].max() < cluster['extreme_price']:
-                        continue
-                    self._log(
-                        f"Stop hunt: swept REL at {cluster['extreme_price']:.2f} "
-                        f"@ {ts} (sweep candle low {row['low']:.2f})"
-                    )
-                    return {
-                        'sweep_time': ts,
-                        'sweep_candle_low': float(row['low']),
-                        'cluster': cluster,
-                        'stop_level': float(row['low']),
-                    }
+            for pool in pools:
+                lvl = pool['extreme_price']
+                if direction == 'bearish' and row['high'] > lvl:
+                    if i == 0 or prior_bars['low'].min() > lvl:
+                        continue  # must approach from below
+                    self._log(f"Stop hunt: swept {pool.get('source', 'high')} "
+                              f"at {lvl:.2f} @ {ts} (high {row['high']:.2f})")
+                    return {'sweep_time': ts, 'cluster': pool, 'stop_level': float(row['high'])}
+                if direction == 'bullish' and row['low'] < lvl:
+                    if i == 0 or prior_bars['high'].max() < lvl:
+                        continue  # must approach from above
+                    self._log(f"Stop hunt: swept {pool.get('source', 'low')} "
+                              f"at {lvl:.2f} @ {ts} (low {row['low']:.2f})")
+                    return {'sweep_time': ts, 'cluster': pool, 'stop_level': float(row['low'])}
         return None
 
     # ------------------------------------------------------------------
-    # Step 4: Break of market structure
+    # Step 4: Market structure shift (MSS) on 3m after the sweep
     # ------------------------------------------------------------------
 
     def _detect_bms(
         self,
-        df_2m: pd.DataFrame,
+        df_3m: pd.DataFrame,
         direction: str,
         after_time: pd.Timestamp,
     ) -> Optional[dict]:
-        """
-        After the sweep, find the first 3-bar swing low (bearish) that then
-        gets closed through — that's the BMS.
-
-        Returns dict with bms_time, bms_swing_level, df_after, bms_pos.
-        """
-        after_time = self._localize_like(after_time, df_2m.index)
-        df_after = df_2m[df_2m.index > after_time].copy()
+        """First 3m swing low (bearish) / high (bullish) after the sweep that
+        gets closed through — capped at max_bars_sweep_to_mss bars."""
+        after_time = self._localize_like(after_time, df_3m.index)
+        df_after = df_3m[df_3m.index > after_time].copy()
+        df_after = df_after.iloc[: self.config['max_bars_sweep_to_mss']]
         if len(df_after) < 5:
             return None
 
@@ -268,7 +383,7 @@ class FVGSweepModel:
                 if broke(bms_row, level):
                     bms_pos = df_after.index.get_loc(bms_ts)
                     self._log(
-                        f"BMS: closed {'below' if direction == 'bearish' else 'above'} "
+                        f"MSS: closed {'below' if direction == 'bearish' else 'above'} "
                         f"swing at {level:.2f} @ {bms_ts}"
                     )
                     return {
@@ -280,22 +395,16 @@ class FVGSweepModel:
         return None
 
     # ------------------------------------------------------------------
-    # Step 5: FVG from displacement candle
+    # Step 5: FVG from the displacement candle
     # ------------------------------------------------------------------
 
     def _find_entry_fvg(self, bms_result: dict, direction: str) -> Optional[FVG]:
-        """
-        Look for a FVG created by the displacement candle at/around the BMS.
-        Returns the first FVG found at or just before the BMS candle.
-        """
+        """FVG created by the displacement around the MSS candle."""
         df_after = bms_result['df_after']
         pos = bms_result['bms_pos']
-
-        # Search window: 2 candles before BMS through 2 after (need i+1 to exist)
         start = max(0, pos - 2)
         end = min(len(df_after), pos + 3)
         search_df = df_after.iloc[start:end]
-
         if len(search_df) < 3:
             return None
 
@@ -309,7 +418,7 @@ class FVGSweepModel:
         return None
 
     # ------------------------------------------------------------------
-    # Step 6: Target — fixed 1.5:1 R:R from entry
+    # Step 6: Target — opposing liquidity with a 3R floor/fallback
     # ------------------------------------------------------------------
 
     def _find_target(
@@ -317,71 +426,60 @@ class FVGSweepModel:
         direction: str,
         entry: float,
         stop: float,
+        target_pools: list,
     ) -> float:
+        """
+        Target the nearest opposing-liquidity pool beyond entry, provided it pays
+        at least target_min_rr. When the nearest pool is closer than that floor
+        (or there is none), fall back to a fixed target_min_rr:1 target.
+        """
         risk = abs(stop - entry)
-        reward = risk * self.config['target_rr']
-        target = (entry - reward) if direction == 'bearish' else (entry + reward)
-        self._log(
-            f"Target: {target:.2f}  risk={risk:.1f}pts  "
-            f"reward={reward:.1f}pts  R:R={self.config['target_rr']}"
-        )
-        return target
+        min_rr = self.config['target_min_rr']
+        floor = (entry - min_rr * risk) if direction == 'short' else (entry + min_rr * risk)
+
+        if direction == 'short':
+            candidates = [p['extreme_price'] for p in target_pools if p['extreme_price'] < entry]
+            pool = max(candidates) if candidates else None  # nearest below
+        else:
+            candidates = [p['extreme_price'] for p in target_pools if p['extreme_price'] > entry]
+            pool = min(candidates) if candidates else None  # nearest above
+
+        if pool is not None and risk > 0:
+            pool_rr = abs(entry - pool) / risk
+            if pool_rr >= min_rr:
+                self._log(f"Target: opposing pool {pool:.2f}  R:R={pool_rr:.2f}")
+                return float(pool)
+            self._log(f"Target: nearest pool {pool:.2f} only {pool_rr:.2f}R "
+                      f"< {min_rr} → fixed {min_rr}R floor {floor:.2f}")
+            return float(floor)
+
+        self._log(f"Target: no opposing pool → fixed {min_rr}R floor {floor:.2f}")
+        return float(floor)
 
     # ------------------------------------------------------------------
-    # Timezone helpers
-    # ------------------------------------------------------------------
-
-    def _localize_like(self, ts: pd.Timestamp, ref: pd.DatetimeIndex) -> pd.Timestamp:
-        """Make ts tz-aware/naive to match ref index."""
-        if ref.tz is not None and ts.tz is None:
-            return ts.tz_localize(ref.tz)
-        if ref.tz is None and ts.tz is not None:
-            return ts.replace(tzinfo=None)
-        return ts
-
-    # ------------------------------------------------------------------
-    # Session window filter
+    # Killzone session window filter
     # ------------------------------------------------------------------
 
     def _session_mask(self, df: pd.DataFrame, session_date: pd.Timestamp) -> pd.Series:
-        """Filter to NY session window on a specific date. Handles DST via America/New_York tz."""
-        idx = df.index
-        if idx.tz is None:
-            idx = idx.tz_localize('UTC')
-        ny = idx.tz_convert('America/New_York')
-        sh, sm = map(int, self.config['session_start_ny'].split(':'))
-        eh, em = map(int, self.config['session_end_ny'].split(':'))
-        start_min = sh * 60 + sm
-        end_min = eh * 60 + em
+        """True for bars on session_date that fall inside ANY configured killzone
+        (NY-local). DST handled via America/New_York."""
+        ny = self._ny_index(df)
         ny_min = ny.hour * 60 + ny.minute
-        ny_date = ny.date
-        target_date = session_date.date()
-        return pd.Series(
-            (ny_date == target_date) & (ny_min >= start_min) & (ny_min < end_min),
-            index=df.index,
-        )
+        on_date = ny.date == session_date.date()
+        in_any = pd.Series(False, index=df.index)
+        for start, end in self.config['killzones']:
+            sh, sm = map(int, start.split(':'))
+            eh, em = map(int, end.split(':'))
+            window = (ny_min >= sh * 60 + sm) & (ny_min < eh * 60 + em)
+            in_any = in_any | pd.Series(on_date & window, index=df.index)
+        return in_any
 
     # ------------------------------------------------------------------
     # Main entry point
     # ------------------------------------------------------------------
 
     def generate_signal(self, snapshot: FVGSweepSnapshot) -> dict:
-        """
-        Evaluate a single session for a valid FVG sweep setup.
-
-        Returns dict:
-            actionable      bool
-            direction       'long' | 'short' | None
-            entry           float | None   limit price (top/bottom of FVG)
-            entry_time      Timestamp | None
-            stop            float | None   at swept swing high/low
-            target          float | None
-            fvg_top         float | None
-            fvg_bottom      float | None
-            sweep_level     float | None
-            session_midpoint float | None
-            checks          list[str]
-        """
+        """Evaluate one session for a valid 2022-model setup."""
         self.checks = []
 
         base = {
@@ -398,67 +496,62 @@ class FVGSweepModel:
             'checks': self.checks,
         }
 
-        # 1. Weekly bias
-        bias = self._weekly_bias(snapshot.df_weekly)
+        # 1. Daily bias
+        bias = self._daily_bias(snapshot.df_daily)
         if bias == 'neutral':
-            self._log("Rule of exclusion: no weekly bias → no trade")
+            self._log("Rule of exclusion: no daily bias → no trade")
             return base
-
         direction = 'short' if bias == 'bearish' else 'long'
 
-        # 2. Relative equal levels on 15m (before session open)
-        session_open = self._localize_like(
-            pd.Timestamp(snapshot.session_date.date()),
-            snapshot.df_15m.index,
-        )
-        clusters = self._find_rel_equal_levels(snapshot.df_15m, session_open, bias)
-        if not clusters:
-            self._log(f"Rule of exclusion: no relative equal {'highs' if bias == 'bearish' else 'lows'} found")
+        # 2. Pool set (built from data before the session open)
+        before = pd.Timestamp(snapshot.session_date.date())
+        pools = self._build_pools(snapshot, before)
+        entry_pools = pools['highs'] if bias == 'bearish' else pools['lows']
+        target_pools = pools['lows'] if bias == 'bearish' else pools['highs']
+        if not entry_pools:
+            self._log(f"Rule of exclusion: no {'buy' if bias == 'bearish' else 'sell'}-side pools to sweep")
             return base
-        self._log(f"Found {len(clusters)} REH/REL cluster(s)")
 
-        # 3. Filter 2m data to session window on session_date only
-        mask = self._session_mask(snapshot.df_2m, snapshot.session_date)
-        session_df = snapshot.df_2m[mask]
+        # 3. Filter 3m data to the killzone windows on session_date
+        session_df = snapshot.df_3m[self._session_mask(snapshot.df_3m, snapshot.session_date)]
         if len(session_df) < 5:
-            self._log("Rule of exclusion: insufficient session data")
+            self._log("Rule of exclusion: insufficient killzone data")
             return base
 
-        # 4. Detect sweep
-        sweep = self._detect_sweep(session_df, clusters, bias)
+        # 4. Sweep
+        sweep = self._detect_sweep(session_df, entry_pools, bias)
         if sweep is None:
-            self._log("Rule of exclusion: no stop hunt detected in session window")
+            self._log("Rule of exclusion: no stop hunt in killzone")
             return base
 
-        # 5. BMS on 2m after sweep
-        bms = self._detect_bms(snapshot.df_2m, bias, sweep['sweep_time'])
+        # 5. MSS on 3m after sweep
+        bms = self._detect_bms(snapshot.df_3m, bias, sweep['sweep_time'])
         if bms is None:
-            self._log("Rule of exclusion: no BMS after stop hunt")
+            self._log("Rule of exclusion: no MSS after stop hunt")
             return base
 
-        # 6. FVG from displacement candle
+        # 6. FVG from displacement
         fvg = self._find_entry_fvg(bms, bias)
         if fvg is None:
-            self._log("Rule of exclusion: no FVG at BMS displacement candle")
+            self._log("Rule of exclusion: no FVG at MSS displacement")
             return base
 
-        # 7. Stop at the swept REH/REL level
+        # 7. Stop at swept extreme — geometry sanity
         stop = sweep['cluster']['extreme_price']
         if direction == 'short' and stop <= fvg.entry:
-            self._log(f"Rule of exclusion: stop {stop:.2f} not above entry {fvg.entry:.2f} → invalid geometry")
+            self._log(f"Rule of exclusion: stop {stop:.2f} not above entry {fvg.entry:.2f}")
             return base
         if direction == 'long' and stop >= fvg.entry:
-            self._log(f"Rule of exclusion: stop {stop:.2f} not below entry {fvg.entry:.2f} → invalid geometry")
+            self._log(f"Rule of exclusion: stop {stop:.2f} not below entry {fvg.entry:.2f}")
             return base
 
-        # 8. Target — fixed 1.5:1 R:R
-        target = self._find_target(bias, entry=fvg.entry, stop=stop)
+        # 8. Target — opposing liquidity, 3R floor
+        target = self._find_target(direction, entry=fvg.entry, stop=stop, target_pools=target_pools)
 
-        # Session midpoint for chart context only
+        # Session midpoint (chart context only)
         pre_sweep = session_df[session_df.index <= sweep['sweep_time']]
-        session_high = float(pre_sweep['high'].max()) if len(pre_sweep) > 0 else float(session_df['high'].max())
-        session_low = float(pre_sweep['low'].min()) if len(pre_sweep) > 0 else float(session_df['low'].min())
-        midpoint = (session_high + session_low) / 2
+        ref = pre_sweep if len(pre_sweep) > 0 else session_df
+        midpoint = (float(ref['high'].max()) + float(ref['low'].min())) / 2
 
         self._log(f"Signal: {direction.upper()} entry={fvg.entry:.2f} stop={stop:.2f} target={target:.2f}")
 
@@ -473,7 +566,7 @@ class FVGSweepModel:
             'fvg_bottom': fvg.bottom,
             'sweep_level': sweep['stop_level'],
             'sweep_time': sweep['sweep_time'],
-            'reh_price': float(sweep['cluster']['extreme_price']),
+            'swept_pool': sweep['cluster'].get('source'),
             'bms_time': bms['bms_time'],
             'bms_swing_level': bms['bms_swing_level'],
             'session_midpoint': midpoint,
