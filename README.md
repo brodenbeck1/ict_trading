@@ -101,6 +101,7 @@ flowchart LR
     daily_bias --> model_2022
     fair_value_gap --> model_2022
     killzones --> model_2022
+    liquidity_sweep_stop_hunt --> model_2022
     market_structure_shift --> model_2022
     relative_equal_highs_lows --> model_2022
     sessions_and_ranges --> model_2022

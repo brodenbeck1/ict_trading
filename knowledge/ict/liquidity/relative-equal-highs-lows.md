@@ -32,6 +32,12 @@ the stronger the draw — and the more likely a sweep through it is a terminus
   timeframe, floor/ceiling per instrument (project default: 20 NQ pts starting point).
 - The pool level = `max(touch highs)` (for equal highs) — stops sit above the highest
   touch; pool is consumed only when that price is violated.
+- **Every touch must still be resting.** A cluster is only valid engineered liquidity
+  if no member has been traded through since *its own* formation. If price ran beyond
+  any touch — even before a later equal swing reprinted the level — the shelf has
+  already been swept and the cluster is dead. A fresh equal swing at a previously-run
+  price is not a revival of that liquidity. (See `first_breach` in the
+  liquidity-sweep-stop-hunt concept for the per-pool "still live?" rule.)
 
 ## Sources
 

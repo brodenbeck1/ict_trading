@@ -19,32 +19,43 @@ def opening_range(
     df: pd.DataFrame,
     session_date: pd.Timestamp,
     minutes: int = 30,
+    start_ny: str = '09:30',
 ) -> Optional[dict]:
     """
-    Compute the high/low of the NY midnight opening range on session_date.
+    Compute the high/low of the NY opening range on session_date.
 
-    The opening range is the first `minutes` after 00:00 NY local time —
-    the true-day open per the ICT midnight-open concept.
+    Defaults to the RTH opening range: the first `minutes` after the 09:30 NY
+    cash open. `start_ny` can anchor the range to another session open (e.g.
+    '08:30' for the NY session open). Note: the midnight open (00:00 NY) is a
+    single reference PRICE — the true-day open, not a range — and belongs to the
+    true-day-midnight-open concept, not here.
 
     Args:
         df:           Intraday OHLCV bars, DatetimeIndex.
         session_date: Calendar date of the session (tz-naive).
         minutes:      Length of the opening range window in minutes (default 30).
+        start_ny:     Window start in 'HH:MM' NY local time (default '09:30').
 
     Returns:
         {'high': float, 'low': float, 'open': float} or None if no bars found.
     """
     ny = ny_index(df)
     ny_min = ny.hour * 60 + ny.minute
+    sh, sm = map(int, start_ny.split(':'))
+    start_min = sh * 60 + sm
     on_date = ny.date == session_date.date()
-    in_or = on_date & (ny_min >= 0) & (ny_min < minutes)
+    in_or = on_date & (ny_min >= start_min) & (ny_min < start_min + minutes)
     bars = df[in_or]
     if len(bars) == 0:
         return None
     return {
-        'high':  float(bars['high'].max()),
-        'low':   float(bars['low'].min()),
-        'open':  float(bars['open'].iloc[0]),
+        'high':        float(bars['high'].max()),
+        'low':         float(bars['low'].min()),
+        'open':        float(bars['open'].iloc[0]),
+        'high_time':   bars['high'].idxmax(),
+        'low_time':    bars['low'].idxmin(),
+        'range_start': bars.index[0],
+        'range_end':   bars.index[-1],
     }
 
 

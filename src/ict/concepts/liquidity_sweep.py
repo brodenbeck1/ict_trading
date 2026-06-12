@@ -9,9 +9,67 @@ See knowledge/ict/liquidity/liquidity-sweep-stop-hunt.md
 """
 
 import pandas as pd
-from typing import Optional
+from typing import Optional, Tuple
 
 from ict.registry import concept
+from ict.utils.time_utils import localize_like
+
+
+def first_breach(
+    df: pd.DataFrame,
+    level: float,
+    side: str,
+    after: Optional[pd.Timestamp] = None,
+) -> Tuple[Optional[pd.Timestamp], Optional[pd.Series]]:
+    """
+    Find the first bar that trades *beyond* a liquidity level.
+
+    The first breach is the moment the resting liquidity at `level` is taken.
+    Any later trade through the same level is price revisiting an already-
+    mitigated pool — not a fresh liquidity grab. This is the canonical rule for
+    deciding whether a pool is still "live": a pool is only valid as a sweep
+    target if it has NOT been breached between its formation and the moment of
+    interest.
+
+    Args:
+        df:     OHLCV bars, DatetimeIndex.
+        level:  The pool price.
+        side:   'high' — buy-side pool, breached when a bar's high > level;
+                'low'  — sell-side pool, breached when a bar's low  < level.
+        after:  Only consider bars strictly after this timestamp (the pool's
+                formation time). None scans the whole frame.
+
+    Returns:
+        (timestamp, row) of the first breaching bar, or (None, None).
+    """
+    if df is None or len(df) == 0:
+        return None, None
+    sub = df
+    if after is not None:
+        after = localize_like(pd.Timestamp(after), df.index)
+        sub = df[df.index > after]
+    hit = sub[sub['high'] > level] if side == 'high' else sub[sub['low'] < level]
+    if len(hit) == 0:
+        return None, None
+    return hit.index[0], hit.iloc[0]
+
+
+def pool_is_live(
+    df: pd.DataFrame,
+    level: float,
+    side: str,
+    formed_at: Optional[pd.Timestamp],
+    as_of: pd.Timestamp,
+) -> bool:
+    """
+    True if `level`'s liquidity is still resting at `as_of` — i.e. it was not
+    already breached between `formed_at` and `as_of`. A pool taken earlier is
+    dead and must not be treated as a sweep target.
+    """
+    ts, _ = first_breach(df, level, side, after=formed_at)
+    if ts is None:
+        return True
+    return ts >= localize_like(pd.Timestamp(as_of), df.index)
 
 
 @concept("liquidity-sweep-stop-hunt")

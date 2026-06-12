@@ -254,14 +254,22 @@ def detect_mss(
     if df is None or len(df) < swing_lookback * 2 + 1:
         return None
 
-    scanner = SwingPointScanner(df, lookback=swing_lookback)
-    scanner.identify_swings()
-
-    search_df = df
+    # Swing detection must only use bars up to (and including) the sweep so the
+    # pivot is established BEFORE the MSS search window, not from future bars.
     if sweep_time is not None:
         cutoff = df.index.get_indexer([sweep_time], method='nearest')[0]
-        end = min(cutoff + max_bars_after_sweep + 1, len(df))
+        pre_df = df.iloc[: cutoff + 1]
+        end    = min(cutoff + max_bars_after_sweep + 1, len(df))
         search_df = df.iloc[cutoff:end]
+    else:
+        pre_df    = df
+        search_df = df
+
+    if len(pre_df) < swing_lookback * 2 + 1:
+        return None
+
+    scanner = SwingPointScanner(pre_df, lookback=swing_lookback)
+    scanner.identify_swings()
 
     if direction == 'bearish':
         lows = (scanner.swing_lows['swing_low_price'].dropna()
@@ -327,7 +335,9 @@ def find_relative_equal_levels(
     Find untested swing highs (side='highs') or lows (side='lows') within a
     rolling lookback window that form relative-equal clusters — resting stop shelves.
 
-    A level is considered taken if price traded through its extreme before `before`.
+    A cluster is only returned if EVERY member is still resting: if any member
+    was traded through since it formed (its liquidity already run), the whole
+    cluster is discarded — a later equal swing does not revive run liquidity.
 
     Args:
         df:            15m (or lower) OHLCV bars.
@@ -338,7 +348,7 @@ def find_relative_equal_levels(
         swing_lookback: Bar lookback for SwingPointScanner.
 
     Returns:
-        List of dicts: {price, extreme_price, timestamps, count}.
+        List of dicts: {price, extreme_price, inner_price, timestamps, count}.
         Sorted by extreme_price descending (highs) or ascending (lows).
     """
     before = localize_like(before, df.index)
@@ -354,14 +364,19 @@ def find_relative_equal_levels(
         if scanner.swing_highs is None or len(scanner.swing_highs) == 0:
             return []
         prices    = scanner.swing_highs['swing_high_price'].dropna()
-        extreme_fn = max
-        def taken(extreme, df_after): return len(df_after) > 0 and df_after['high'].max() > extreme
+        extreme_fn, inner_fn = max, min
     else:
         if scanner.swing_lows is None or len(scanner.swing_lows) == 0:
             return []
         prices    = scanner.swing_lows['swing_low_price'].dropna()
-        extreme_fn = min
-        def taken(extreme, df_after): return len(df_after) > 0 and df_after['low'].min() < extreme
+        extreme_fn, inner_fn = min, max
+
+    def member_taken(ts_m: pd.Timestamp, price_m: float) -> bool:
+        """A member is taken if price traded beyond it after it formed."""
+        after = window[window.index > ts_m]
+        if len(after) == 0:
+            return False
+        return after['high'].max() > price_m if side == 'highs' else after['low'].min() < price_m
 
     clusters: List[dict] = []
     used: set = set()
@@ -369,26 +384,24 @@ def find_relative_equal_levels(
     for i, (ts, price) in enumerate(prices.items()):
         if i in used:
             continue
-        similar    = prices[(prices >= price - tolerance_pts) & (prices <= price + tolerance_pts)]
-        extreme    = float(extreme_fn(similar.values))
-        last_ts    = max(similar.index)
-        df_after   = window[window.index > last_ts]
+        similar = prices[(prices >= price - tolerance_pts) & (prices <= price + tolerance_pts)]
+        for j, idx in enumerate(prices.index):
+            if idx in similar.index:
+                used.add(j)
 
-        if taken(extreme, df_after):
-            for j, idx in enumerate(prices.index):
-                if idx in similar.index:
-                    used.add(j)
+        # Relative-equal liquidity is only valid if EVERY member is still resting.
+        # A single member raided since its own formation means the shelf has
+        # already been run — even if a later equal swing reprinted the level.
+        if any(member_taken(t, float(p)) for t, p in similar.items()):
             continue
 
         clusters.append({
             'price':         float(similar.mean()),
-            'extreme_price': extreme,
+            'extreme_price': float(extreme_fn(similar.values)),
+            'inner_price':   float(inner_fn(similar.values)),
             'timestamps':    similar.index.tolist(),
             'count':         int(len(similar)),
         })
-        for j, idx in enumerate(prices.index):
-            if idx in similar.index:
-                used.add(j)
 
     if side == 'highs':
         clusters.sort(key=lambda c: c['extreme_price'], reverse=True)

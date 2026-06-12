@@ -20,7 +20,7 @@ into ``Mark`` objects (see ``backtests/fvg_sweep_backtest.py`` for the adapter).
 from __future__ import annotations
 
 import html
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 import pandas as pd
@@ -66,6 +66,42 @@ class TradeViz:
     panels: dict                     # {tf_key: candlestick DataFrame (OHLC, DatetimeIndex)}
     marks: list = field(default_factory=list)
     pnl: float = 0.0
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Timezone display
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _to_display_tz(obj, tz):
+    """UTC (tz-naive or tz-aware) → wall-clock in `tz`, returned tz-naive so
+    Plotly renders the local time verbatim instead of reinterpreting it in the
+    viewer's browser timezone. Accepts a Timestamp or a DatetimeIndex."""
+    if obj is None or tz is None:
+        return obj
+    if isinstance(obj, pd.Timestamp):
+        ts = obj if obj.tz is not None else obj.tz_localize('UTC')
+        return ts.tz_convert(tz).tz_localize(None)
+    idx = obj if obj.tz is not None else obj.tz_localize('UTC')
+    return idx.tz_convert(tz).tz_localize(None)
+
+
+def _convert_trades_tz(trades: list, tz: str) -> list:
+    """Return copies of every TradeViz with panel indices and mark timestamps
+    converted to `tz` wall-clock. Panels and marks are converted together so
+    overlays stay aligned to the candles."""
+    out = []
+    for tv in trades:
+        panels = {}
+        for k, df in tv.panels.items():
+            df2 = df.copy()
+            df2.index = _to_display_tz(df2.index, tz)
+            panels[k] = df2
+        marks = [replace(m,
+                         t0=_to_display_tz(m.t0, tz),
+                         t1=_to_display_tz(m.t1, tz),
+                         time=_to_display_tz(m.time, tz)) for m in tv.marks]
+        out.append(replace(tv, panels=panels, marks=marks))
+    return out
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -282,8 +318,17 @@ def build_report(
     title: str = "Backtest Report",
     equity: Optional[pd.Series] = None,
     stats: Optional[dict] = None,
+    display_tz: Optional[str] = "America/New_York",
 ) -> str:
-    """Render trades to a single self-contained HTML file. Returns out_path."""
+    """Render trades to a single self-contained HTML file. Returns out_path.
+
+    display_tz: if set (default America/New_York), all candle and overlay times
+    are shown in that timezone's wall-clock. Pass None to keep raw UTC.
+    """
+    if display_tz:
+        trades = _convert_trades_tz(trades, display_tz)
+        title = f"{title}  ·  times: {display_tz}"
+
     options = []
     views = []
 

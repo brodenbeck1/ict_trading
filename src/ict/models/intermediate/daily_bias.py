@@ -64,9 +64,14 @@ def daily_bias_components(
     draw       = draw_on_liquidity(daily_df, dealing_range_days, swing_lookback)
     prem_disc  = premium_discount(daily_df, dealing_range_days)
 
-    if order_flow == draw == prem_disc == 'bullish':
+    # Bias gate: order_flow + draw must agree.
+    # premium_discount is returned for reference but is NOT a gate here — it is
+    # an entry-zone filter applied at the model level (don't short in discount,
+    # don't buy in premium). Including it in the gate causes it to always contradict
+    # order_flow because a falling market is by definition in discount.
+    if order_flow == draw == 'bullish':
         bias = 'bullish'
-    elif order_flow == draw == prem_disc == 'bearish':
+    elif order_flow == draw == 'bearish':
         bias = 'bearish'
     else:
         bias = 'neutral'

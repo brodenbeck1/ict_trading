@@ -99,6 +99,15 @@ frontmatter (`name`, `aliases`, `category`, `related`, `parameters`, `detection`
 - Query the dependency tree: `ict.registry.lineage("<slug>")` returns the transitive dict; `ict.registry.mermaid("<slug>")` returns a Mermaid string.
 - Regenerate the README diagram: `.venv/bin/python scripts/lineage.py --update-readme`.
 
+> **Code and semantic layer stay in sync — always.** The `knowledge/` markdown is the
+> spec; the detector is its implementation. **Whenever a detector's logic changes —
+> especially a correction the user gives to detection rules, thresholds, timing, or a
+> pool/validity condition — update the matching `knowledge/` file in the *same* change.**
+> Reflect the new rule in the "Detection Rules" section (and `parameters:` frontmatter if
+> a value changed). A code fix without the corresponding knowledge update is incomplete and
+> leaves the spec lying. If a correction spans concepts (e.g. a liquidity rule touching the
+> sweep, the opening range, and a model), update every affected file.
+
 ---
 
 ## Model Pattern

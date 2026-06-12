@@ -7,6 +7,8 @@ parameters:
   asian_range_ny: "8:00 PM - 12:00 AM (ICT forex definition); project UTC convention: 18:00-00:00"
   cbdr_ny: "2:00 PM - 8:00 PM (between NY close and Asia open)"
   flout_ny: "3:00 PM - 12:00 AM (CBDR + Asia, used for projections)"
+  opening_range_start: "09:30"   # NY start of the opening range (RTH cash open); e.g. 08:30 for the NY session-open range
+  opening_range_minutes: 30
 detection: implemented
 ---
 
@@ -24,6 +26,14 @@ liquidity scaffolding:
   For index futures, the analogous use is projecting the afternoon/overnight
   consolidation height.
 - **Flout** — CBDR + Asia combined (3 PM–midnight), alternative projection base.
+- **Opening Range (OR)** — the first 30 min after the **09:30 NY cash open** (RTH OR,
+  the project default for `opening_range`); its high/low are intraday liquidity pools.
+  `start_ny` can anchor the range to another session open (e.g. `08:30` for the NY
+  session open). The OR is a **range** (high/low) — distinct from the **midnight open**,
+  which is a single reference *price* (the true-day open), not a range; see
+  [true-day-midnight-open](true-day-midnight-open.md). As a pool, the OR only *exists*
+  once the range closes — it must never be treated as swept before its `range_end`
+  (no look-ahead; see [liquidity-sweep-stop-hunt](../liquidity/liquidity-sweep-stop-hunt.md)).
 - **Session highs/lows** — London H/L, NY pre-market H/L: standing intraday pools
   (see [liquidity-pools](../liquidity/liquidity-pools.md)).
 
@@ -43,6 +53,8 @@ rather than the extreme; if ADR is exceeded, fib the ADR low→high for extensio
 
 - Compute ranges as `(max(high), min(low))` over the session mask (NY-local windows
   converted to UTC per date).
+- Opening range: high/low over `[start_ny, start_ny + minutes)` in NY local time
+  (default `09:30` + 30 min). It becomes a sweepable pool only at `range_end`.
 - Standard-deviation projections: `proj_k = range_high + k * range_height` (and mirror
   below); store k in {1, 2, 2.5, 4} for confluence with other targets.
 - Feature flags per day: `asia_range_height`, `asia_high_taken_by` (session),

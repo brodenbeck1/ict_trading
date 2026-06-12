@@ -10,313 +10,121 @@ Fixed 1 NQ contract ($20/pt).
 Outputs:
   fvg_sweep_nq_trades.csv   — full trade log
   fvg_sweep_nq_equity.png   — equity curve + trade bar chart
+  fvg_sweep_nq_report.html  — interactive multi-timeframe Plotly report
 """
 
 import os
 import sys
 import pandas as pd
-import numpy as np
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
+
+# shared backtest utilities live in plot_trades (same directory)
+sys.path.insert(0, os.path.dirname(__file__))
+from plot_trades import (
+    localize_to, eod_utc,
+    simulate_fill, simulate_exit, calc_pnl_pts,
+    compute_stats, print_stats, plot_equity_curve,
+)
 
 from ict import DataLoader, Model2022, Model2022Snapshot
 from ict.backtest import Mark, TradeViz, build_report
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
-NQ_DOLLARS_PER_POINT = 20.0    # NQ full contract
-START_DATE     = '2024-11-01'  # backtest start date (inclusive)
-WARMUP_WEEKS   = 14            # extra history before START_DATE for bias/REH warmup
-EOD_EXIT_HOUR  = 16            # NY hour for EOD exit (16:00 = RTH close)
+NQ_DOLLARS_PER_POINT = 20.0
+START_DATE   = '2024-11-01'
+WARMUP_WEEKS = 14
+EOD_EXIT_HOUR = 16
 
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../Data'))
 OUT_DIR  = os.path.abspath(os.path.join(os.path.dirname(__file__), '../results/fvg_sweep_nq'))
 os.makedirs(OUT_DIR, exist_ok=True)
 
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
+# ─── Snapshot builder ────────────────────────────────────────────────────────
 
-def _to_ny(ts: pd.Timestamp) -> pd.Timestamp:
-    """Convert a tz-naive UTC timestamp to America/New_York."""
-    return ts.tz_localize('UTC').tz_convert('America/New_York')
-
-
-def _eod_utc(session_date: pd.Timestamp, tz_aware: bool = False) -> pd.Timestamp:
-    """Return EOD (16:00 NY) as UTC. tz_aware=True returns tz-aware, False returns tz-naive."""
-    date_str = str(session_date.date())
-    eod_ny = pd.Timestamp(f'{date_str} {EOD_EXIT_HOUR}:00:00', tz='America/New_York')
-    eod = eod_ny.tz_convert('UTC')
-    return eod if tz_aware else eod.replace(tzinfo=None)
-
-
-def _localize_to(ts: pd.Timestamp, ref_index: pd.DatetimeIndex) -> pd.Timestamp:
-    """Make ts tz-aware/naive to match ref_index tz."""
-    if ref_index.tz is not None and ts.tz is None:
-        return ts.tz_localize(ref_index.tz)
-    if ref_index.tz is None and ts.tz is not None:
-        return ts.replace(tzinfo=None)
-    return ts
-
-
-# ─── Snapshot Builder ────────────────────────────────────────────────────────
-
-def build_snapshot(df_1m: pd.DataFrame, session_date: pd.Timestamp) -> Model2022Snapshot:
+def build_snapshot(df_1m: pd.DataFrame, session_ts: pd.Timestamp) -> Model2022Snapshot:
     """
     Slice raw 1m data and resample into the three timeframes Model2022 needs.
     df_1m has a tz-naive UTC index.
     """
-    # Build a UTC-aware anchor date (handles both tz-aware and tz-naive df_1m index)
-    d_naive = pd.Timestamp(session_date.date())
+    d_naive = pd.Timestamp(session_ts.date())
     d = d_naive.tz_localize('UTC') if df_1m.index.tz is not None else d_naive
 
-    # 3m: 5 days back + session day (entry TF; MSS detection needs pre-session context)
     df_3m = (
         df_1m.loc[d - pd.Timedelta(days=5) : d + pd.Timedelta(days=1)]
         .resample('3min').agg({'open': 'first', 'high': 'max', 'low': 'min',
                                'close': 'last', 'volume': 'sum'})
         .dropna(subset=['close'])
     )
-
-    # 15m: 14 days back + session day (pool detection)
     df_15m = (
         df_1m.loc[d - pd.Timedelta(days=14) : d + pd.Timedelta(days=1)]
         .resample('15min').agg({'open': 'first', 'high': 'max', 'low': 'min',
                                 'close': 'last', 'volume': 'sum'})
         .dropna(subset=['close'])
     )
-
-    # Daily: 45 days back, up to (not including) session day — bias is pre-session
     df_daily = (
         df_1m.loc[d - pd.Timedelta(days=45) : d - pd.Timedelta(minutes=1)]
         .resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min',
                             'close': 'last', 'volume': 'sum'})
         .dropna(subset=['close'])
     )
-
     return Model2022Snapshot(
-        df_3m=df_3m,
-        df_15m=df_15m,
-        df_daily=df_daily,
-        session_date=session_date,
+        df_3m=df_3m, df_15m=df_15m, df_daily=df_daily, session_date=session_ts,
     )
 
 
-# ─── Fill Simulation ─────────────────────────────────────────────────────────
+# ─── Plotly report adapter ───────────────────────────────────────────────────
 
-def simulate_fill(df_3m: pd.DataFrame, signal: dict, session_date: pd.Timestamp) -> dict | None:
-    """
-    Scan 3m bars after entry_time for a limit fill.
-    Fill window: entry_time → EOD (16:00 NY).
-    Short fills when high >= entry; long fills when low <= entry.
-    Returns {'fill_time', 'fill_price'} or None.
-    """
-    entry_time  = _localize_to(signal['entry_time'], df_3m.index)
-    entry_price = signal['entry']
-    direction   = signal['direction']
-    eod         = _eod_utc(session_date, tz_aware=(df_3m.index.tz is not None))
-
-    df_fill = df_3m[(df_3m.index > entry_time) & (df_3m.index <= eod)]
-
-    for ts, row in df_fill.iterrows():
-        if direction == 'short' and row['high'] >= entry_price:
-            return {'fill_time': ts, 'fill_price': entry_price}
-        if direction == 'long' and row['low'] <= entry_price:
-            return {'fill_time': ts, 'fill_price': entry_price}
-
-    return None
-
-
-# ─── Exit Simulation ─────────────────────────────────────────────────────────
-
-def simulate_exit(df_3m: pd.DataFrame, signal: dict, fill: dict,
-                  session_date: pd.Timestamp) -> dict:
-    """
-    From fill_time → EOD, find first target or stop hit.
-    Falls back to EOD close price.
-    Returns {'exit_time', 'exit_price', 'exit_reason'}.
-    """
-    direction  = signal['direction']
-    target     = signal['target']
-    stop       = signal['stop']
-    fill_time  = _localize_to(fill['fill_time'], df_3m.index)
-    eod        = _eod_utc(session_date, tz_aware=(df_3m.index.tz is not None))
-
-    df_after = df_3m[(df_3m.index > fill_time) & (df_3m.index <= eod)]
-
-    for ts, row in df_after.iterrows():
-        if direction == 'short':
-            if row['low'] <= target:
-                return {'exit_time': ts, 'exit_price': target, 'exit_reason': 'target'}
-            if row['high'] >= stop:
-                return {'exit_time': ts, 'exit_price': stop, 'exit_reason': 'stop'}
-        else:   # long
-            if row['high'] >= target:
-                return {'exit_time': ts, 'exit_price': target, 'exit_reason': 'target'}
-            if row['low'] <= stop:
-                return {'exit_time': ts, 'exit_price': stop, 'exit_reason': 'stop'}
-
-    if len(df_after) > 0:
-        last = df_after.iloc[-1]
-        return {'exit_time': df_after.index[-1],
-                'exit_price': float(last['close']),
-                'exit_reason': 'eod'}
-
-    return {'exit_time': fill_time, 'exit_price': fill['fill_price'], 'exit_reason': 'eod'}
-
-
-def calc_pnl_pts(direction: str, entry: float, exit_price: float) -> float:
-    return (entry - exit_price) if direction == 'short' else (exit_price - entry)
-
-
-# ─── Statistics ──────────────────────────────────────────────────────────────
-
-def compute_stats(trades: pd.DataFrame) -> dict:
-    if len(trades) == 0:
-        return {}
-
-    pnl_pts = trades['pnl_pts']
-    pnl_usd = trades['pnl_usd']
-
-    wins   = trades[trades['exit_reason'] == 'target']
-    losses = trades[trades['exit_reason'] == 'stop']
-    eods   = trades[trades['exit_reason'].str.startswith('eod')]
-
-    gross_wins   = wins['pnl_usd'].sum() if len(wins) else 0.0
-    gross_losses = abs(losses['pnl_usd'].sum()) if len(losses) else 1e-9
-
-    equity   = pnl_usd.cumsum()
-    peak     = equity.cummax()
-    max_dd   = float((equity - peak).min())
-
-    # Sharpe on per-trade returns (annualized assuming ~252 trades/year approximation)
-    daily_ret = trades.groupby('session_date')['pnl_usd'].sum()
-    sharpe = float(daily_ret.mean() / daily_ret.std() * np.sqrt(252)) if len(daily_ret) > 1 else 0.0
-
-    avg_rr = float(trades['reward_pts'].mean() / trades['risk_pts'].replace(0, np.nan).mean()) \
-        if len(trades) else 0.0
-
-    return {
-        'total_trades':    len(trades),
-        'total_pnl_usd':  round(float(pnl_usd.sum()), 2),
-        'total_pnl_pts':  round(float(pnl_pts.sum()), 2),
-        'win_rate':        round(len(wins) / len(trades) * 100, 1),
-        'wins':            len(wins),
-        'losses':          len(losses),
-        'eods':            len(eods),
-        'avg_win_pts':     round(float(wins['pnl_pts'].mean()), 2) if len(wins) else 0,
-        'avg_loss_pts':    round(float(losses['pnl_pts'].mean()), 2) if len(losses) else 0,
-        'avg_win_usd':     round(float(wins['pnl_usd'].mean()), 2) if len(wins) else 0,
-        'avg_loss_usd':    round(float(losses['pnl_usd'].mean()), 2) if len(losses) else 0,
-        'profit_factor':   round(gross_wins / gross_losses, 2),
-        'avg_rr':          round(avg_rr, 2),
-        'max_dd_usd':      round(max_dd, 2),
-        'sharpe_ratio':    round(sharpe, 2),
-    }
-
-
-def print_stats(stats: dict, label: str = 'Results'):
-    w = 52
-    print(f"\n{'='*w}")
-    print(f"  {label}")
-    print(f"{'='*w}")
-    if not stats:
-        print("  No trades.")
-        return
-    print(f"  Total trades:    {stats['total_trades']}")
-    print(f"  Win rate:        {stats['win_rate']}%  "
-          f"({stats['wins']}W / {stats['losses']}L / {stats['eods']} EOD)")
-    print(f"  Total P&L:       ${stats['total_pnl_usd']:>10,.2f}  ({stats['total_pnl_pts']:.1f} pts)")
-    print(f"  Avg win:         {stats['avg_win_pts']:>6.1f} pts  (${stats['avg_win_usd']:,.2f})")
-    print(f"  Avg loss:        {stats['avg_loss_pts']:>6.1f} pts  (${stats['avg_loss_usd']:,.2f})")
-    print(f"  Avg R:R (setup): {stats['avg_rr']:.2f}")
-    print(f"  Profit factor:   {stats['profit_factor']:.2f}")
-    print(f"  Max drawdown:    ${stats['max_dd_usd']:>10,.2f}")
-    print(f"  Sharpe ratio:    {stats['sharpe_ratio']:.2f}")
-    print()
-
-
-# ─── Equity Curve ────────────────────────────────────────────────────────────
-
-def plot_equity_curve(trades: pd.DataFrame, path: str):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 8),
-                                   gridspec_kw={'height_ratios': [3, 1]})
-
-    equity = trades['pnl_usd'].cumsum()
-    xs = range(len(equity))
-
-    ax1.plot(equity.values, color='royalblue', linewidth=1.5, zorder=3)
-    ax1.axhline(0, color='black', linewidth=0.7, linestyle='--')
-    ax1.fill_between(xs, equity.values, 0,
-                     where=(equity.values >= 0), alpha=0.12, color='green', zorder=2)
-    ax1.fill_between(xs, equity.values, 0,
-                     where=(equity.values < 0), alpha=0.12, color='red', zorder=2)
-    ax1.set_title(f'FVG Sweep — NQ NY Session {START_DATE}→ — Equity Curve (1 contract, $20/pt)',
-                  fontsize=12)
-    ax1.set_ylabel('Cumulative P&L (USD)')
-    ax1.grid(True, alpha=0.25)
-
-    colors = ['green' if r == 'target' else ('red' if r == 'stop' else 'darkorange')
-              for r in trades['exit_reason']]
-    ax2.bar(xs, trades['pnl_usd'], color=colors, alpha=0.8)
-    ax2.axhline(0, color='black', linewidth=0.5)
-    ax2.set_ylabel('Trade P&L (USD)')
-    ax2.set_xlabel('Trade #')
-    ax2.grid(True, alpha=0.25)
-
-    # Legend
-    from matplotlib.patches import Patch
-    legend_elements = [
-        Patch(facecolor='green',     alpha=0.8, label='Target hit'),
-        Patch(facecolor='red',       alpha=0.8, label='Stop hit'),
-        Patch(facecolor='darkorange',alpha=0.8, label='EOD exit'),
-    ]
-    ax2.legend(handles=legend_elements, loc='upper left', fontsize=8)
-
-    plt.tight_layout()
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f"Equity curve → {path}")
-
-
-# ─── Plotly Report Adapter (model-specific) ──────────────────────────────────
-
-# Default-on groups stay visible; the rest start collapsed (legendonly).
 C_ENTRY, C_STOP, C_TARGET = '#1f77b4', '#c0392b', '#1a8a4a'
 C_FVG, C_SWEEP, C_MSS, C_BIAS = '#f39c12', '#8e44ad', '#16a085', '#7f8c8d'
 
 
 def _window(df: pd.DataFrame, lo: pd.Timestamp, hi: pd.Timestamp) -> pd.DataFrame:
-    lo = _localize_to(lo, df.index)
-    hi = _localize_to(hi, df.index)
+    lo = localize_to(lo, df.index)
+    hi = localize_to(hi, df.index)
     return df.loc[lo:hi]
 
 
 def trade_panels(snap: Model2022Snapshot, session_ts: pd.Timestamp) -> dict:
     """Windowed candlestick frames for the three timeframes the model used."""
     d = pd.Timestamp(session_ts.date())
+
+    # df_daily ends before the session day; append the session day bar from 3m
+    session_day_bar = (
+        snap.df_3m
+        .resample('D').agg({'open': 'first', 'high': 'max', 'low': 'min',
+                            'close': 'last', 'volume': 'sum'})
+        .dropna(subset=['close'])
+    )
+    d_loc = localize_to(d, session_day_bar.index)
+    session_day_bar = session_day_bar[session_day_bar.index.normalize() == d_loc]
+    daily_display = pd.concat([snap.df_daily.tail(30), session_day_bar])
+    daily_display = daily_display[~daily_display.index.duplicated(keep='last')]
+
     return {
-        'daily': snap.df_daily.tail(30),
+        'daily': daily_display,
         '15m':   _window(snap.df_15m, d - pd.Timedelta(days=5), d + pd.Timedelta(days=1)),
         '3m':    _window(snap.df_3m,  d, d + pd.Timedelta(days=1)),
     }
 
 
 def signal_to_marks(signal: dict, fill: dict, exit_info: dict) -> list:
-    """Translate an FVGSweep signal into report overlays grouped for toggling."""
+    """Translate a Model2022 signal into report overlays."""
     direction = signal['direction']
     marks = []
 
     # — Entry / Stop / Target (default on) —
     g = 'Entry/Stop/Target'
     marks += [
-        Mark('level', g, '3m', f"Entry {signal['entry']:.2f}", C_ENTRY, price=signal['entry']),
-        Mark('level', g, '3m', f"Stop {signal['stop']:.2f}", C_STOP, dash='dash', price=signal['stop']),
-        Mark('level', g, '3m', f"Target {signal['target']:.2f}", C_TARGET, dash='dash', price=signal['target']),
-        Mark('marker', g, '3m', "Fill", C_ENTRY, time=fill['fill_time'], price=fill['fill_price'], symbol='circle'),
+        Mark('level',  g, '3m', f"Entry {signal['entry']:.2f}",  C_ENTRY,  price=signal['entry']),
+        Mark('level',  g, '3m', f"Stop {signal['stop']:.2f}",    C_STOP,   dash='dash', price=signal['stop']),
+        Mark('level',  g, '3m', f"Target {signal['target']:.2f}", C_TARGET, dash='dash', price=signal['target']),
+        Mark('marker', g, '3m', "Fill", C_ENTRY,
+             time=fill['fill_time'], price=fill['fill_price'], symbol='circle'),
     ]
     if exit_info:
-        col = C_TARGET if exit_info['exit_reason'] == 'target' else (C_STOP if exit_info['exit_reason'] == 'stop' else C_BIAS)
+        col = (C_TARGET if exit_info['exit_reason'] == 'target'
+               else C_STOP if exit_info['exit_reason'] == 'stop' else C_BIAS)
         marks.append(Mark('marker', g, '3m', f"Exit ({exit_info['exit_reason']})", col,
                           time=exit_info['exit_time'], price=exit_info['exit_price'], symbol='x'))
 
@@ -327,32 +135,58 @@ def signal_to_marks(signal: dict, fill: dict, exit_info: dict) -> list:
                           t0=signal['entry_time'],
                           t1=(exit_info['exit_time'] if exit_info else None)))
 
-    # — Sweep (default off): point on 3m + swept pool level on 15m —
+    # — Sweep: pool level + opening range box + touch markers (default off) —
     if signal.get('sweep_time') is not None:
         lbl = f"Sweep {signal.get('swept_pool') or ''}".strip()
         marks.append(Mark('marker', 'Sweep', '3m', lbl, C_SWEEP,
                           time=signal['sweep_time'], price=signal['sweep_level'],
-                          symbol='x', default_on=False))
+                          symbol='x', default_on=True))
         marks.append(Mark('level', 'Sweep', '15m', f"Swept pool {signal['sweep_level']:.2f}",
-                          C_SWEEP, dash='dot', price=signal['sweep_level'], default_on=False))
+                          C_SWEEP, dash='dot', price=signal['sweep_level'], default_on=True))
+
+        cluster = signal.get('swept_cluster') or {}
+        source  = cluster.get('source', '')
+        price   = cluster.get('price', signal['sweep_level'])
+
+        if source in ('OR-high', 'OR-low'):
+            or_high = price if source == 'OR-high' else cluster.get('range_high', price)
+            or_low  = price if source == 'OR-low'  else cluster.get('range_low',  price)
+            t0 = cluster.get('range_start')
+            t1 = cluster.get('range_end')
+            if t0 is not None and t1 is not None:
+                marks.append(Mark('zone', 'Sweep', '3m', 'Opening Range', C_SWEEP,
+                                  y0=or_low, y1=or_high, t0=t0, t1=t1, default_on=True))
+            for ts in cluster.get('timestamps', []):
+                marks.append(Mark('marker', 'Sweep', '3m', f"Pool: {source} {price:.2f}",
+                                  C_SWEEP, time=ts, price=price,
+                                  symbol='diamond', default_on=True))
+        elif source in ('PDH', 'PDL'):
+            for ts in cluster.get('timestamps', []):
+                marks.append(Mark('marker', 'Sweep', 'daily', f"Pool: {source} {price:.2f}",
+                                  C_SWEEP, time=ts, price=price,
+                                  symbol='diamond', default_on=True))
+        else:
+            for ts in cluster.get('timestamps', []):
+                marks.append(Mark('marker', 'Sweep', '15m', f"Pool: {source} {price:.2f}",
+                                  C_SWEEP, time=ts, price=price,
+                                  symbol='diamond', default_on=True))
 
     # — MSS (default off) —
     if signal.get('bms_time') is not None:
         sym = 'triangle-down' if direction == 'short' else 'triangle-up'
         marks.append(Mark('marker', 'MSS', '3m', f"MSS {signal['bms_swing_level']:.2f}", C_MSS,
                           time=signal['bms_time'], price=signal['bms_swing_level'],
-                          symbol=sym, default_on=False))
+                          symbol=sym, default_on=True))
         marks.append(Mark('level', 'MSS', '3m', "MSS swing", C_MSS, dash='dot',
-                          price=signal['bms_swing_level'], default_on=False))
+                          price=signal['bms_swing_level'], default_on=True))
 
     return marks
 
 
-# ─── Main Loop ───────────────────────────────────────────────────────────────
+# ─── Main loop ───────────────────────────────────────────────────────────────
 
 def run_backtest():
-    # Load all data: warmup weeks before START_DATE + everything after
-    start_dt = pd.Timestamp(START_DATE)
+    start_dt     = pd.Timestamp(START_DATE)
     warmup_start = start_dt - pd.Timedelta(weeks=WARMUP_WEEKS)
     weeks_needed = int((pd.Timestamp.now() - warmup_start).days / 7) + 4
 
@@ -361,22 +195,20 @@ def run_backtest():
     df_1m  = loader.read_NQ()
     print(f"  Loaded {len(df_1m):,} rows  {df_1m.index[0]} → {df_1m.index[-1]}")
 
-    # Identify NY session trading days on or after START_DATE
     raw_idx_full = df_1m.index
     if raw_idx_full.tz is None:
         raw_idx_full = raw_idx_full.tz_localize('UTC')
     cutoff_utc = start_dt.tz_localize('UTC')
-    df_bt = df_1m[raw_idx_full >= cutoff_utc] if df_1m.index.tz is not None else \
-            df_1m[df_1m.index >= start_dt]
+    df_bt = (df_1m[raw_idx_full >= cutoff_utc] if df_1m.index.tz is not None
+             else df_1m[df_1m.index >= start_dt])
 
-    # Convert to NY — handle both tz-aware and tz-naive index
     raw_idx = df_bt.index
     if raw_idx.tz is None:
         raw_idx = raw_idx.tz_localize('UTC')
     ny_idx = raw_idx.tz_convert('America/New_York')
-    session_mask = (ny_idx.hour * 60 + ny_idx.minute >= 8 * 60 + 30) & \
-                   (ny_idx.hour * 60 + ny_idx.minute <  11 * 60)
-    trading_days = sorted(set(ny_idx.date[session_mask]))
+    session_mask_arr = ((ny_idx.hour * 60 + ny_idx.minute >= 8 * 60 + 30) &
+                        (ny_idx.hour * 60 + ny_idx.minute <  11 * 60))
+    trading_days = sorted(set(ny_idx.date[session_mask_arr]))
     print(f"  {len(trading_days)} trading days  {trading_days[0]} → {trading_days[-1]}\n")
 
     model      = Model2022()
@@ -388,7 +220,6 @@ def run_backtest():
 
     for i, day in enumerate(trading_days):
         session_ts = pd.Timestamp(day)
-
         try:
             snap   = build_snapshot(df_1m, session_ts)
             signal = model.generate_signal(snap)
@@ -399,18 +230,16 @@ def run_backtest():
 
         if not signal['actionable']:
             continue
-
         n_signals += 1
 
-        fill = simulate_fill(snap.df_3m, signal, session_ts)
+        fill = simulate_fill(snap.df_3m, signal, session_ts, EOD_EXIT_HOUR)
         if fill is None:
             n_no_fill += 1
             continue
 
-        exit_info = simulate_exit(snap.df_3m, signal, fill, session_ts)
-
-        pnl_pts = calc_pnl_pts(signal['direction'], fill['fill_price'], exit_info['exit_price'])
-        pnl_usd = round(pnl_pts * NQ_DOLLARS_PER_POINT, 2)
+        exit_info = simulate_exit(snap.df_3m, signal, fill, session_ts, EOD_EXIT_HOUR)
+        pnl_pts   = calc_pnl_pts(signal['direction'], fill['fill_price'], exit_info['exit_price'])
+        pnl_usd   = round(pnl_pts * NQ_DOLLARS_PER_POINT, 2)
 
         trade_log.append({
             'session_date': str(day),
@@ -428,7 +257,6 @@ def run_backtest():
             'pnl_usd':      pnl_usd,
         })
 
-        # Capture the rich per-trade view for the Plotly report
         viz_trades.append(TradeViz(
             label=f"{day}  {signal['direction'].upper()}  ${pnl_usd:,.0f}",
             panels=trade_panels(snap, session_ts),
@@ -455,16 +283,13 @@ def run_backtest():
 
     trades = pd.DataFrame(trade_log)
 
-    # Save trade log
     log_path = os.path.join(OUT_DIR, 'fvg_sweep_nq_trades.csv')
     trades.to_csv(log_path, index=False)
     print(f"\nTrade log → {log_path}")
 
-    # Overall stats
     stats = compute_stats(trades)
     print_stats(stats, f'FVG Sweep — NQ NY Session {START_DATE}→')
 
-    # Monthly breakdown
     trades['month'] = pd.to_datetime(trades['session_date']).dt.to_period('M')
     print(f"  {'Month':<10} {'Trades':>6}  {'Wins':>4}  {'P&L pts':>9}  {'P&L $':>9}")
     print(f"  {'-'*45}")
@@ -473,19 +298,20 @@ def run_backtest():
         print(f"  {str(month):<10} {len(grp):>6}  {w:>4}  "
               f"{grp['pnl_pts'].sum():>9.1f}  {grp['pnl_usd'].sum():>9,.0f}")
 
-    # Equity curve (static PNG)
     chart_path = os.path.join(OUT_DIR, 'fvg_sweep_nq_equity.png')
-    plot_equity_curve(trades, chart_path)
+    plot_equity_curve(
+        trades, chart_path,
+        title=f'FVG Sweep — NQ NY Session {START_DATE}→  (1 contract, $20/pt)',
+    )
 
-    # Interactive multi-timeframe Plotly report
     report_stats = {
-        'Trades': stats['total_trades'],
-        'Win rate': f"{stats['win_rate']}%  ({stats['wins']}W / {stats['losses']}L / {stats['eods']} EOD)",
-        'Total P&L': f"${stats['total_pnl_usd']:,.2f}  ({stats['total_pnl_pts']:.1f} pts)",
+        'Trades':          stats['total_trades'],
+        'Win rate':        f"{stats['win_rate']}%  ({stats['wins']}W / {stats['losses']}L / {stats['eods']} EOD)",
+        'Total P&L':       f"${stats['total_pnl_usd']:,.2f}  ({stats['total_pnl_pts']:.1f} pts)",
         'Avg R:R (setup)': stats['avg_rr'],
-        'Profit factor': stats['profit_factor'],
-        'Max drawdown': f"${stats['max_dd_usd']:,.2f}",
-        'Sharpe': stats['sharpe_ratio'],
+        'Profit factor':   stats['profit_factor'],
+        'Max drawdown':    f"${stats['max_dd_usd']:,.2f}",
+        'Sharpe':          stats['sharpe_ratio'],
     }
     report_path = os.path.join(OUT_DIR, 'fvg_sweep_nq_report.html')
     build_report(
