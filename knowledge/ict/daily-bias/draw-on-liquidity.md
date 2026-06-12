@@ -6,7 +6,7 @@ related: [daily-bias, buyside-sellside-liquidity, internal-external-range-liquid
 parameters:
   candidate_levels: "old daily/weekly highs & lows, relative equal H/L, unfilled FVGs/voids, NWOG/NDOG, session highs/lows"
   lookback: "20/40/60 trading days (IPDA ranges)"
-detection: not-implemented
+detection: implemented
 ---
 
 # Draw on Liquidity (DOL)

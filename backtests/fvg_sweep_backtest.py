@@ -20,7 +20,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from ict import DataLoader, FVGSweepModel, FVGSweepSnapshot
+from ict import DataLoader, Model2022, Model2022Snapshot
 from ict.backtest import Mark, TradeViz, build_report
 
 # ─── Config ──────────────────────────────────────────────────────────────────
@@ -61,9 +61,9 @@ def _localize_to(ts: pd.Timestamp, ref_index: pd.DatetimeIndex) -> pd.Timestamp:
 
 # ─── Snapshot Builder ────────────────────────────────────────────────────────
 
-def build_snapshot(df_1m: pd.DataFrame, session_date: pd.Timestamp) -> FVGSweepSnapshot:
+def build_snapshot(df_1m: pd.DataFrame, session_date: pd.Timestamp) -> Model2022Snapshot:
     """
-    Slice raw 1m data and resample into the three timeframes FVGSweepModel needs.
+    Slice raw 1m data and resample into the three timeframes Model2022 needs.
     df_1m has a tz-naive UTC index.
     """
     # Build a UTC-aware anchor date (handles both tz-aware and tz-naive df_1m index)
@@ -94,7 +94,7 @@ def build_snapshot(df_1m: pd.DataFrame, session_date: pd.Timestamp) -> FVGSweepS
         .dropna(subset=['close'])
     )
 
-    return FVGSweepSnapshot(
+    return Model2022Snapshot(
         df_3m=df_3m,
         df_15m=df_15m,
         df_daily=df_daily,
@@ -292,7 +292,7 @@ def _window(df: pd.DataFrame, lo: pd.Timestamp, hi: pd.Timestamp) -> pd.DataFram
     return df.loc[lo:hi]
 
 
-def trade_panels(snap: FVGSweepSnapshot, session_ts: pd.Timestamp) -> dict:
+def trade_panels(snap: Model2022Snapshot, session_ts: pd.Timestamp) -> dict:
     """Windowed candlestick frames for the three timeframes the model used."""
     d = pd.Timestamp(session_ts.date())
     return {
@@ -379,7 +379,7 @@ def run_backtest():
     trading_days = sorted(set(ny_idx.date[session_mask]))
     print(f"  {len(trading_days)} trading days  {trading_days[0]} → {trading_days[-1]}\n")
 
-    model      = FVGSweepModel()
+    model      = Model2022()
     trade_log  = []
     viz_trades = []
     n_signals  = 0

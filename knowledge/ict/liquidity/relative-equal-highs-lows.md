@@ -7,7 +7,7 @@ parameters:
   tolerance: "max distance between touches to count as 'equal'; project decision: dynamic, starts at 20 NQ points, configurable per instrument"
   min_touches: 2
   min_separation_bars: "touches must be distinct swings, not the same swing"
-detection: not-implemented
+detection: implemented
 ---
 
 # Relative Equal Highs / Lows

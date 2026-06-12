@@ -5,7 +5,7 @@ category: daily-bias
 related: [daily-bias, power-of-three, judas-swing, true-day-midnight-open]
 parameters:
   reference_open: "midnight NY open (true day open) for the daily candle"
-detection: not-implemented
+detection: implemented
 ---
 
 # OHLC / OLHC Candle Profiles

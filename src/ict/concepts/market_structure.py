@@ -9,9 +9,10 @@ A swing low has higher lows on both left and right sides.
 
 import pandas as pd
 import numpy as np
-from typing import Literal
+from typing import List, Literal, Optional
 
 from ict.registry import concept
+from ict.utils.time_utils import localize_like
 
 
 @concept("swing-points")
@@ -212,5 +213,186 @@ class SwingPointScanner:
                 # Mark these indices as used
                 for idx in similar_lows.index:
                     used_indices.add(lows.index.get_loc(idx))
-        
+
         return clusters
+
+
+# ---------------------------------------------------------------------------
+# Market Structure Shift (MSS / CHoCH)
+# See knowledge/ict/market-structure/market-structure-shift.md
+# ---------------------------------------------------------------------------
+
+@concept("market-structure-shift")
+def detect_mss(
+    df: pd.DataFrame,
+    direction: str,
+    swing_lookback: int = 3,
+    max_bars_after_sweep: int = 30,
+    sweep_time: Optional[pd.Timestamp] = None,
+) -> Optional[dict]:
+    """
+    Detect a Market Structure Shift (MSS / CHoCH).
+
+    A counter-trend break of the most recent opposing swing level, ideally with
+    displacement, following a liquidity sweep. This is the confirmation step in the
+    entry sequence: sweep → MSS → retrace → deliver.
+
+    Args:
+        df:                   Intraday OHLCV bars (1m/3m/5m).
+        direction:            'bearish' — price breaks a swing low after sweeping highs;
+                              'bullish' — price breaks a swing high after sweeping lows.
+        swing_lookback:       Bar lookback for SwingPointScanner.
+        max_bars_after_sweep: If sweep_time given, only consider breaks within this
+                              many bars after the sweep.
+        sweep_time:           Optional timestamp of the preceding sweep; used to
+                              time-link the MSS.
+
+    Returns:
+        dict with keys {direction, broken_level, break_time, sweep_ref, bar_index}
+        or None if no MSS detected.
+    """
+    if df is None or len(df) < swing_lookback * 2 + 1:
+        return None
+
+    scanner = SwingPointScanner(df, lookback=swing_lookback)
+    scanner.identify_swings()
+
+    search_df = df
+    if sweep_time is not None:
+        cutoff = df.index.get_indexer([sweep_time], method='nearest')[0]
+        end = min(cutoff + max_bars_after_sweep + 1, len(df))
+        search_df = df.iloc[cutoff:end]
+
+    if direction == 'bearish':
+        lows = (scanner.swing_lows['swing_low_price'].dropna()
+                if scanner.swing_lows is not None else pd.Series(dtype=float))
+        if len(lows) == 0:
+            return None
+        pivot_low = float(lows.iloc[-1])
+        pivot_time = lows.index[-1]
+
+        for i in range(len(search_df)):
+            bar = search_df.iloc[i]
+            t   = search_df.index[i]
+            if t <= pivot_time:
+                continue
+            if bar['close'] < pivot_low:
+                return {
+                    'direction': 'bearish',
+                    'broken_level': pivot_low,
+                    'break_time': t,
+                    'sweep_ref': sweep_time,
+                    'bar_index': df.index.get_indexer([t], method='nearest')[0],
+                }
+    else:
+        highs = (scanner.swing_highs['swing_high_price'].dropna()
+                 if scanner.swing_highs is not None else pd.Series(dtype=float))
+        if len(highs) == 0:
+            return None
+        pivot_high = float(highs.iloc[-1])
+        pivot_time = highs.index[-1]
+
+        for i in range(len(search_df)):
+            bar = search_df.iloc[i]
+            t   = search_df.index[i]
+            if t <= pivot_time:
+                continue
+            if bar['close'] > pivot_high:
+                return {
+                    'direction': 'bullish',
+                    'broken_level': pivot_high,
+                    'break_time': t,
+                    'sweep_ref': sweep_time,
+                    'bar_index': df.index.get_indexer([t], method='nearest')[0],
+                }
+
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Relative Equal Highs / Lows
+# See knowledge/ict/liquidity/relative-equal-highs-lows.md
+# ---------------------------------------------------------------------------
+
+@concept("relative-equal-highs-lows")
+def find_relative_equal_levels(
+    df: pd.DataFrame,
+    before: pd.Timestamp,
+    side: str,
+    lookback_days: int = 5,
+    tolerance_pts: float = 5.0,
+    swing_lookback: int = 1,
+) -> List[dict]:
+    """
+    Find untested swing highs (side='highs') or lows (side='lows') within a
+    rolling lookback window that form relative-equal clusters — resting stop shelves.
+
+    A level is considered taken if price traded through its extreme before `before`.
+
+    Args:
+        df:            15m (or lower) OHLCV bars.
+        before:        Upper time bound — only use bars strictly before this time.
+        side:          'highs' (buy-side pools) or 'lows' (sell-side pools).
+        lookback_days: Days back from `before` to scan.
+        tolerance_pts: Max price distance between touches to form a cluster.
+        swing_lookback: Bar lookback for SwingPointScanner.
+
+    Returns:
+        List of dicts: {price, extreme_price, timestamps, count}.
+        Sorted by extreme_price descending (highs) or ascending (lows).
+    """
+    before = localize_like(before, df.index)
+    start  = before - pd.Timedelta(days=lookback_days)
+    window = df[(df.index >= start) & (df.index < before)].copy()
+    if len(window) < 3:
+        return []
+
+    scanner = SwingPointScanner(window, lookback=swing_lookback)
+    scanner.identify_swings()
+
+    if side == 'highs':
+        if scanner.swing_highs is None or len(scanner.swing_highs) == 0:
+            return []
+        prices    = scanner.swing_highs['swing_high_price'].dropna()
+        extreme_fn = max
+        def taken(extreme, df_after): return len(df_after) > 0 and df_after['high'].max() > extreme
+    else:
+        if scanner.swing_lows is None or len(scanner.swing_lows) == 0:
+            return []
+        prices    = scanner.swing_lows['swing_low_price'].dropna()
+        extreme_fn = min
+        def taken(extreme, df_after): return len(df_after) > 0 and df_after['low'].min() < extreme
+
+    clusters: List[dict] = []
+    used: set = set()
+
+    for i, (ts, price) in enumerate(prices.items()):
+        if i in used:
+            continue
+        similar    = prices[(prices >= price - tolerance_pts) & (prices <= price + tolerance_pts)]
+        extreme    = float(extreme_fn(similar.values))
+        last_ts    = max(similar.index)
+        df_after   = window[window.index > last_ts]
+
+        if taken(extreme, df_after):
+            for j, idx in enumerate(prices.index):
+                if idx in similar.index:
+                    used.add(j)
+            continue
+
+        clusters.append({
+            'price':         float(similar.mean()),
+            'extreme_price': extreme,
+            'timestamps':    similar.index.tolist(),
+            'count':         int(len(similar)),
+        })
+        for j, idx in enumerate(prices.index):
+            if idx in similar.index:
+                used.add(j)
+
+    if side == 'highs':
+        clusters.sort(key=lambda c: c['extreme_price'], reverse=True)
+    else:
+        clusters.sort(key=lambda c: c['extreme_price'])
+
+    return clusters

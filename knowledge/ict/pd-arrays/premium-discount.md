@@ -6,7 +6,7 @@ related: [dealing-range, optimal-trade-entry, pd-array-matrix, internal-external
 parameters:
   equilibrium: 0.5
   quartiles: [0.25, 0.75]
-detection: not-implemented
+detection: implemented
 ---
 
 # Premium / Discount & Equilibrium

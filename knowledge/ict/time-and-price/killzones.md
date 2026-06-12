@@ -10,7 +10,7 @@ parameters:
   ny_kz_forex_ny: "7:00-10:00 AM"
   london_close_kz_ny: "10:00 AM-12:00 PM"
   dst_note: "all times are New York local; convert to UTC per-date (EDT=UTC-4, EST=UTC-5)"
-detection: not-implemented
+detection: implemented
 ---
 
 # Killzones

@@ -2,14 +2,14 @@
 Daily Bias Model Example
 =========================
 
-Demonstrates how to use the DailyBiasModel to analyze market conditions
+Demonstrates how to use the SniperModel to analyze market conditions
 and determine if a setup is actionable based on ICT methodology.
 """
 
 import sys
 import os
 
-from ict import DailyBiasModel, MarketSnapshot, DataLoader
+from ict import SniperModel, SniperSnapshot, DataLoader
 import pandas as pd
 
 
@@ -32,7 +32,7 @@ def main():
     print(f"Analysis date: {nq_5m.index.max()}\n")
     
     # Create market snapshot with correlated instruments
-    snapshot = MarketSnapshot(
+    snapshot = SniperSnapshot(
         df=nq_5m,
         correlated={
             'NQ': nq_5m.tail(100),  # Last 100 candles for SMT analysis
@@ -43,7 +43,7 @@ def main():
     )
     
     # Initialize and run daily bias model
-    model = DailyBiasModel()
+    model = SniperModel()
     result = model.generate_bias(snapshot)
     
     # Display results

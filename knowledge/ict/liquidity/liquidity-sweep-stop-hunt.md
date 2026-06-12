@@ -6,7 +6,7 @@ related: [buyside-sellside-liquidity, relative-equal-highs-lows, market-structur
 parameters:
   rejection_window_bars: "bars allowed between the sweep and the close back inside (e.g., 1-12 on 5m)"
   sweep_vs_run_rule: "close back inside the level = sweep (reversal); acceptance beyond = run (continuation)"
-detection: not-implemented
+detection: implemented
 ---
 
 # Liquidity Sweep / Stop Hunt

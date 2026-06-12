@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
 
-from ict import DataLoader, FVGSweepModel
+from ict import DataLoader, Model2022
 from fvg_sweep_backtest import build_snapshot, simulate_fill, simulate_exit, START_DATE
 
 DATA_DIR   = os.path.abspath(os.path.join(os.path.dirname(__file__), '../Data'))
@@ -349,7 +349,7 @@ def main():
     loader = DataLoader(timeframe='1min', weeks=64, data_dir=DATA_DIR)
     df_1m  = loader.read_NQ()
 
-    model = FVGSweepModel()
+    model = Model2022()
 
     for _, row in trades.iterrows():
         session_ts = pd.Timestamp(row['session_date'])

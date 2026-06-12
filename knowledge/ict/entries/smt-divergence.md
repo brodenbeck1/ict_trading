@@ -7,7 +7,7 @@ parameters:
   instruments: "ES, NQ, YM (project: all three required in MarketSnapshot.correlated)"
   comparison_timeframe: "15m or lower for execution; same timeframe on both charts"
   swing_window: "compare corresponding swing extremes within a small time tolerance (e.g., +/- 3 bars)"
-detection: not-implemented
+detection: implemented
 ---
 
 # SMT Divergence (Smart Money Technique)

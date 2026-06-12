@@ -7,7 +7,7 @@ parameters:
   asian_range_ny: "8:00 PM - 12:00 AM (ICT forex definition); project UTC convention: 18:00-00:00"
   cbdr_ny: "2:00 PM - 8:00 PM (between NY close and Asia open)"
   flout_ny: "3:00 PM - 12:00 AM (CBDR + Asia, used for projections)"
-detection: not-implemented
+detection: implemented
 ---
 
 # Sessions & Reference Ranges

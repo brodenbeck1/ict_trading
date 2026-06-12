@@ -7,7 +7,7 @@ parameters:
   requires_displacement: true
   requires_prior_sweep: "true in reversal models (sweep -> MSS is the canonical sequence)"
   working_timeframes: "1m/3m/5m for intraday entries; 15m for swing context"
-detection: not-implemented
+detection: implemented
 ---
 
 # Market Structure Shift (MSS)

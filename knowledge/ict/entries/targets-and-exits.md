@@ -7,7 +7,7 @@ parameters:
   primary_target: "nearest opposing liquidity pool / imbalance past the 50% of the governing range"
   min_rr: "2-3R typical gate (2022 model uses minimum 1:3); below threshold -> skip trade"
   partials: "common scheme: scale at first pool, runner to the HTF draw"
-detection: not-implemented
+detection: implemented
 ---
 
 # Targets & Exits
