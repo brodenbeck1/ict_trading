@@ -20,7 +20,7 @@ after the purge, in three escalating styles:
 2. **Standard (taught default)** — after the purge, wait on the entry tf for a
    **CISD/CSD**: price closing back through the opens of the candles that delivered
    the purge (identical to the ICT
-   [change-in-state-of-delivery](../../library/market-structure/change-in-state-of-delivery.md)).
+   [change-in-state-of-delivery](../../ict/market-structure/change-in-state-of-delivery.md)).
    Enter on the CISD close or the first retrace into the confirmation leg's FVG/OB.
 3. **Conservative** — require a full MSS on the entry tf, enter on the retrace into
    the displacement array.

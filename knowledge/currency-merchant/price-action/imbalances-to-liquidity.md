@@ -21,7 +21,7 @@ current objective is one of the two:
   unfilled void/gap in the new direction).
 
 This is the same engine as the ICT library's
-[internal-external-range-liquidity](../../library/liquidity/internal-external-range-liquidity.md)
+[internal-external-range-liquidity](../../ict/liquidity/internal-external-range-liquidity.md)
 alternation (IRL ↔ ERL), expressed without the dealing-range wrapper — and in
 Kishane's system it runs on the **time-cycle grid**: each 90-minute cycle's delivery
 is read as one hop of the imbalance↔liquidity sequence, with the prior cycle's

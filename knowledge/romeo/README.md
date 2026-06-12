@@ -1,7 +1,7 @@
 # Romeo (CRT) Concept Library
 
 Candle Range Theory as taught by **Romeo (@Romeotpt)** — the "every candle is a
-range" framework. Same file schema as the [ICT library](../library/README.md)
+range" framework. Same file schema as the [ICT library](../ict/README.md)
 (`name`/`aliases`/`category`/`related`/`parameters`/`detection` frontmatter +
 Detection Rules + Sources), with one addition: an **`ict_refs:`** frontmatter field
 linking each concept to its ICT-library equivalents, since CRT deliberately reuses

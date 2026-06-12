@@ -24,9 +24,9 @@ voids in two roles:
    — the void inside the zone is the precise level the algorithm defends.
 
 Definitions of the underlying objects live in the ICT library
-([liquidity-void](../../library/liquidity/liquidity-void.md),
-[fair-value-gap](../../library/pd-arrays/fair-value-gap.md),
-[volume-imbalance](../../library/pd-arrays/volume-imbalance.md)) — this file records
+([liquidity-void](../../ict/liquidity/liquidity-void.md),
+[fair-value-gap](../../ict/pd-arrays/fair-value-gap.md),
+[volume-imbalance](../../ict/pd-arrays/volume-imbalance.md)) — this file records
 the CM usage pattern.
 
 ## Detection Rules

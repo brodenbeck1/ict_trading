@@ -22,7 +22,7 @@ Consequences:
 - Every candle plays out its own Power of Three — open (accumulation), wick against
   the close direction (manipulation), body expansion (distribution). The OHLC/OLHC
   sequencing of the ICT framework is the same observation
-  (see ICT library: [ohlc-candle-profiles](../../library/daily-bias/ohlc-candle-profiles.md)).
+  (see ICT library: [ohlc-candle-profiles](../../ict/daily-bias/ohlc-candle-profiles.md)).
 - Candle levels — high, low, open, close, body midpoint, wick midpoints — are all
   tradable reference levels, not just the swing extremes.
 

@@ -27,7 +27,7 @@ into the level provides the *reason* the range resolves there; the CRT provides 
 *structure* to trade it with (defined range, defined targets).
 
 All four level types are defined in the ICT library
-([pd-arrays/](../../library/pd-arrays/)) — this file only adds the coupling and
+([pd-arrays/](../../ict/pd-arrays/)) — this file only adds the coupling and
 ranking logic.
 
 ## Detection Rules

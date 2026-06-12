@@ -6,8 +6,8 @@ An ICT-concepts trader whose own system centers on **Time Theory** (90-minute
 cycles, session opens) plus a mechanical orderblock playbook (Rules of Engagement)
 and a PA-flow state framework, taught through CM Academy.
 
-Same schema as the [ICT library](../library/README.md) and
-[Romeo/CRT library](../library-romeo/README.md), plus two fields:
+Same schema as the [ICT library](../ict/README.md) and
+[Romeo/CRT library](../romeo/README.md), plus two fields:
 - **`ict_refs:`** — equivalent ICT-library concepts;
 - **`source_coverage:`** — `partial-public` (core rules documented publicly) or
   `sparse-public` (module named publicly, details paywalled on Patreon/Whop).

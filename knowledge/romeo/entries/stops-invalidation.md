@@ -18,7 +18,7 @@ side — so:
 
 - **Stop**: a few ticks beyond the purge wick (below the wick low for longs). Same
   structural-invalidation logic as the ICT
-  [stop-placement](../../library/entries/stop-placement.md) convention.
+  [stop-placement](../../ict/entries/stop-placement.md) convention.
 - **Hard invalidation** (independent of the stop): a **range-timeframe close beyond
   the purged extreme**. That converts the purge into a breakout — the CRT read was
   wrong, and any surviving position should be closed even if the LTF stop hasn't
