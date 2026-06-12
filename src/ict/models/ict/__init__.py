@@ -8,7 +8,7 @@ Higher-level trading models that combine core ICT concepts:
 - Optimal trade entry
 """
 
-from ict_library.models.daily_bias import DailyBiasModel, MarketSnapshot
-from ict_library.models.fvg_sweep_model import FVGSweepModel, FVGSweepSnapshot
+from ict.models.ict.daily_bias import DailyBiasModel, MarketSnapshot
+from ict.models.ict.fvg_sweep import FVGSweepModel, FVGSweepSnapshot
 
 __all__ = ['DailyBiasModel', 'MarketSnapshot', 'FVGSweepModel', 'FVGSweepSnapshot']

@@ -5,9 +5,22 @@ Data Loading Utilities
 Handles loading and resampling of futures data from CSV files.
 """
 
+import re
 import pandas as pd
 from pathlib import Path
 from typing import Optional, Literal
+
+
+def _normalize_freq(tf: str) -> str:
+    """Normalize legacy pandas offset aliases for pandas >= 2.2.
+
+    Keeps the project's documented timeframe API ('1T', '5T', '15T', '1H', '4H')
+    working after pandas removed the 'T' (minute) and 'H' (hour) aliases in
+    favour of 'min' and 'h'.
+    """
+    tf = re.sub(r'(\d*)T$', r'\1min', tf)
+    tf = re.sub(r'(\d*)H$', r'\1h', tf)
+    return tf
 
 
 class DataLoader:
@@ -75,7 +88,7 @@ class DataLoader:
             'volume': 'sum'
         }
         
-        resampled = df.resample(self.timeframe).agg(agg)
+        resampled = df.resample(_normalize_freq(self.timeframe)).agg(agg)
         return resampled
     
     def read_NQ(self) -> pd.DataFrame:

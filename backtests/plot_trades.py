@@ -21,14 +21,12 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from ict import DataLoader, FVGSweepModel
+from fvg_sweep_backtest import build_snapshot, simulate_fill, simulate_exit, START_DATE
 
-from ict_library import DataLoader, FVGSweepModel
-from backtest.fvg_sweep_backtest import build_snapshot, simulate_fill, simulate_exit, START_DATE
-
-DATA_DIR   = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Data'))
-TRADES_CSV = os.path.join(os.path.dirname(__file__), 'fvg_sweep_nq_trades.csv')
-OUT_DIR    = os.path.join(os.path.dirname(__file__), 'trade_charts')
+DATA_DIR   = os.path.abspath(os.path.join(os.path.dirname(__file__), '../Data'))
+TRADES_CSV = os.path.abspath(os.path.join(os.path.dirname(__file__), '../results/fvg_sweep_nq/fvg_sweep_nq_trades.csv'))
+OUT_DIR    = os.path.abspath(os.path.join(os.path.dirname(__file__), '../results/fvg_sweep_nq/charts'))
 
 NQ_DOLLARS_PER_POINT = 20.0
 

@@ -19,9 +19,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from ict_library import DataLoader, FVGSweepModel, FVGSweepSnapshot
+from ict import DataLoader, FVGSweepModel, FVGSweepSnapshot
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -30,8 +28,9 @@ START_DATE     = '2024-11-01'  # backtest start date (inclusive)
 WARMUP_WEEKS   = 14            # extra history before START_DATE for bias/REH warmup
 EOD_EXIT_HOUR  = 16            # NY hour for EOD exit (16:00 = RTH close)
 
-DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Data'))
-OUT_DIR  = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../Data'))
+OUT_DIR  = os.path.abspath(os.path.join(os.path.dirname(__file__), '../results/fvg_sweep_nq'))
+os.makedirs(OUT_DIR, exist_ok=True)
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────

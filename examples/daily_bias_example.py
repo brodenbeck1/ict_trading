@@ -9,17 +9,13 @@ and determine if a setup is actionable based on ICT methodology.
 import sys
 import os
 
-# Add the trading_models directory to Python path to find ict_library
-trading_models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, trading_models_dir)
-
-from ict_library import DailyBiasModel, MarketSnapshot, DataLoader
+from ict import DailyBiasModel, MarketSnapshot, DataLoader
 import pandas as pd
 
 
 def main():
     # Get data directory path (relative to script location)
-    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Data'))
+    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../Data'))
     
     # Load intraday data (5-minute) for the last 2 weeks
     intraday_loader = DataLoader(timeframe='5T', weeks=2, data_dir=data_dir)

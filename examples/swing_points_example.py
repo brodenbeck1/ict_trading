@@ -12,16 +12,12 @@ Demonstrates how to use the SwingPointScanner to identify:
 import sys
 import os
 
-# Add the trading_models directory to Python path to find ict_library
-trading_models_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, trading_models_dir)
-
-from ict_library import SwingPointScanner, DataLoader
+from ict import SwingPointScanner, DataLoader
 
 
 def main():
     # Get data directory path (relative to script location)
-    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Data'))
+    data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../Data'))
     
     # Load data for last 4 weeks at 15-minute timeframe
     loader = DataLoader(timeframe='15T', weeks=4, data_dir=data_dir)

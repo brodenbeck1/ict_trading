@@ -23,8 +23,8 @@ import numpy as np
 from dataclasses import dataclass
 from typing import Optional
 
-from ict_library.core.market_structure import SwingPointScanner
-from ict_library.core.fair_value_gap import find_fvgs, FVG
+from ict.concepts.market_structure import SwingPointScanner
+from ict.concepts.fair_value_gap import find_fvgs, FVG
 
 
 @dataclass
