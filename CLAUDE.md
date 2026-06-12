@@ -27,22 +27,25 @@ Futures trading research project implementing ICT (Inner Circle Trader) concepts
 - New York: 13:30 – 20:00 (RTH); 08:00 – 13:30 (pre-market)
 - Regular Trading Hours (RTH): 13:30 – 20:00 UTC
 
-**Loading data** — always use `DataLoader` (alias for `csvReader` in `ict_library`):
+**Version control**: the cleaned CSVs and `raw/` downloads are **gitignored** (~1.1 GB, regenerable from the `Data/prep/` databento pipeline); `Data/prep/.env` (API key) is never committed; only `Data/prep/` is tracked. A 1000-row NQ slice lives in `tests/fixtures/` so tests run without the full dataset.
+
+**Loading data** — use `DataLoader` from the installed `ict` package (`pip install -e .` once):
 
 ```python
-from ict_library import DataLoader
+from ict import DataLoader
 
-loader = DataLoader(timeframe='5T', weeks=52)   # last 52 weeks of 5m bars
+loader = DataLoader(timeframe='5T', weeks=52, data_dir='Data')   # last 52 weeks of 5m bars
 nq = loader.read_NQ()   # returns DataFrame with DatetimeIndex
 es = loader.read_ES()
 ym = loader.read_YM()
 
 # Timeframe strings: '1T'=1m, '5T'=5m, '15T'=15m, '1H'=1h, '4H'=4h, 'D'=daily
+# (legacy 'T'/'H' aliases are normalized internally for pandas >= 2.2)
 ```
 
-Always pass `data_dir` when running scripts outside `trading_models/`:
+`DataLoader` has no reliable default location — pass `data_dir` pointing at the repo's `Data/`:
 ```python
-data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../Data'))
+data_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../Data'))  # from examples/ or backtests/
 loader = DataLoader(timeframe='5T', data_dir=data_dir)
 ```
 
@@ -51,25 +54,38 @@ loader = DataLoader(timeframe='5T', data_dir=data_dir)
 ## Project Structure
 
 ```
-ict_trading/
-├── Data/
-│   ├── es_futures_1m_cleaned.csv
-│   ├── nq_futures_1m_cleaned.csv
-│   ├── ym_futures_1m_cleaned.csv
-│   └── prep/                      # data acquisition scripts (databento)
-├── trading_models/
-│   ├── ict_library/               # shared library (DataLoader, base classes, ICT utils)
-│   ├── backtest/                  # backtesting engine (see Backtesting section)
-│   ├── sniper/
-│   │   └── daily_bias_sniper.py   # DailyBiasModel + MarketSnapshot
-│   ├── liquidity_pools/
-│   │   └── swing_points.py        # SwingPointScanner
-│   ├── strategies/
-│   │   └── notes/                 # structured strategy notes (output of /strategy-from-transcript)
-│   ├── examples/
-│   └── requirements.txt
+ict_trading/                          # repo root (git, pyproject.toml, .venv/)
+├── Data/                             # price data — gitignored except prep/ (see Data section)
+│   ├── *_futures_1m_cleaned.csv      #   ~1.1 GB cleaned continuous contracts (untracked)
+│   ├── raw/                          #   databento .zst downloads (untracked)
+│   └── prep/                         #   data acquisition pipeline, databento (TRACKED)
+├── knowledge/                        # semantic layer: concept libraries (markdown + YAML frontmatter)
+│   ├── ict/                          #   ICT concepts + named models (7 category folders)
+│   ├── romeo/                        #   Romeo — Candle Range Theory (CRT)
+│   └── currency-merchant/            #   Kishane — Time Theory / 90-min cycles / Rules of Engagement
+├── src/ict/                          # the installable package  (pip install -e .)
+│   ├── registry.py                   #   @concept decorator + frontmatter loader (binds knowledge <-> code)
+│   ├── data/loader.py                #   DataLoader
+│   ├── concepts/                     #   primitives: market_structure.py, fair_value_gap.py, ...
+│   └── models/{ict,romeo,merchant}/  #   composite models, grouped by author
+├── strategies/notes/                 # human strategy write-ups (output of /strategy-from-transcript)
+├── backtests/                        # backtest runner scripts (write outputs to results/)
+├── examples/                         # minimal scripts that verify a model runs
+├── scripts/                          # one-off utilities (read_data.py, print_daily_bars.py)
+├── tests/                            # pytest: registry coverage + detector smoke (+ fixtures/)
+├── legacy/                           # superseded orphan modules — NOT imported (see legacy/README.md)
+├── results/                          # backtest outputs — gitignored
+├── pyproject.toml
 └── CLAUDE.md
 ```
+
+The markdown in `knowledge/` is the **semantic layer**: one file per concept, each with
+frontmatter (`name`, `aliases`, `category`, `related`, `parameters`, `detection`) and a
+"Detection Rules" section. `src/ict/registry.py` binds it to code — a detector registers
+against a concept slug with `@concept("<slug>")`, and `tests/test_registry_coverage.py`
+fails if a concept's `detection:` flag and the registered detectors disagree. Pull a
+concept's default config from its frontmatter with `ict.registry.params("<slug>")`.
+Currently implemented detectors: `swing-points`, `fair-value-gap`, `daily-bias`.
 
 ---
 
@@ -136,7 +152,7 @@ class MyModel:
 3. Session breakdown: same stats sliced by Asia / London / NY
 4. Equity curve plot
 
-**Backtesting module location**: `trading_models/backtest/`
+**Backtesting location**: runner scripts in `backtests/` (e.g. `fvg_sweep_backtest.py`); outputs are written to `results/` (gitignored). A reusable engine, when extracted, belongs in `src/ict/backtest/`.
 
 **Walk-forward approach**: Iterate day by day. Compute daily bias once at session open. Apply intraday signals on 5m bars within that day's session window. One trade per day (the model's rule of exclusion limits entries).
 
@@ -144,14 +160,14 @@ class MyModel:
 
 ## Adding a New Strategy
 
-1. Run `/strategy-from-transcript` with the video transcript → review the notes file in `trading_models/strategies/notes/`
-2. Create `trading_models/<strategy_name>/<strategy_name>.py` following the model pattern
+1. Run `/strategy-from-transcript` with the video transcript → review the notes file in `strategies/notes/` (and the relevant concept files under `knowledge/`)
+2. Create the model in `src/ict/models/<author>/<strategy_name>.py` following the model pattern; if it implements a `knowledge/` concept, decorate its entry point with `@concept("<slug>")`
 3. Implement `generate_signal(snapshot)` using the checklist from the notes file
-4. Create `trading_models/examples/<strategy_name>_example.py` to verify the model runs
-5. Backtest using `trading_models/backtest/` (see backtest module docs)
+4. Create `examples/<strategy_name>_example.py` to verify the model runs
+5. Backtest with a runner in `backtests/`; outputs land in `results/`
 
 ---
 
 ## Key Reference: Existing Plan
 
-`trading_models/.github/prompts/plan-nqBacktestFramework.prompt.md` contains the detailed backtest framework design — consult it when building or extending the backtesting engine.
+`.github/prompts/plan-nqBacktestFramework.prompt.md` contains the detailed backtest framework design — consult it when building or extending the backtesting engine.
