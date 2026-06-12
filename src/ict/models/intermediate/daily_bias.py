@@ -19,7 +19,7 @@ from ict.concepts.premium_discount import premium_discount
 from ict.concepts.ohlc_profiles import ohlc_candle_profile  # noqa: F401
 
 
-@concept("daily-bias")
+@concept("daily-bias", depends_on=["draw-on-liquidity", "premium-discount", "ohlc-candle-profiles"])
 def daily_bias(
     daily_df: pd.DataFrame,
     lookback: int = 20,

@@ -52,10 +52,66 @@ See [knowledge/ict/README.md](knowledge/ict/README.md) for the full concept inde
 
 | Model | File | Status |
 |---|---|---|
-| ICT 2022 (FVG sweep) | `src/ict/models/ict/fvg_sweep.py` | backtested |
+| ICT 2022 (FVG sweep) | `src/ict/models/ict/model_2022.py` | backtested |
+| Sniper Model | `src/ict/models/ict/sniper_model.py` | implemented |
 | Silver Bullet | `knowledge/ict/models/silver-bullet.md` | spec only |
 | Unicorn | `knowledge/ict/models/unicorn.md` | spec only |
 | Three Indians / Wolfe Wave | `knowledge/ict/models/three-indians.md` | spec only |
+
+## Concept Lineage
+
+How concepts compose into models. Re-generate after adding new concepts:
+
+```bash
+python scripts/lineage.py                  # print full diagram
+python scripts/lineage.py model-2022       # single model's graph
+python scripts/lineage.py --update-readme  # regenerate the section below
+```
+
+<!-- lineage-start -->
+```mermaid
+flowchart LR
+    subgraph Concepts
+        draw_on_liquidity["draw-on-liquidity"]
+        fair_value_gap["fair-value-gap"]
+        killzones["killzones"]
+        liquidity_sweep_stop_hunt["liquidity-sweep-stop-hunt"]
+        market_structure_shift["market-structure-shift"]
+        ohlc_candle_profiles["ohlc-candle-profiles"]
+        premium_discount["premium-discount"]
+        relative_equal_highs_lows["relative-equal-highs-lows"]
+        sessions_and_ranges["sessions-and-ranges"]
+        smt_divergence["smt-divergence"]
+        swing_points["swing-points"]
+        targets_and_exits["targets-and-exits"]
+    end
+    subgraph Intermediate
+        daily_bias["daily-bias"]
+    end
+    subgraph Models
+        model_2022["model-2022"]
+        sniper_model["sniper-model"]
+    end
+
+    draw_on_liquidity --> daily_bias
+    premium_discount --> daily_bias
+    ohlc_candle_profiles --> daily_bias
+    swing_points --> draw_on_liquidity
+    swing_points --> market_structure_shift
+    daily_bias --> model_2022
+    fair_value_gap --> model_2022
+    killzones --> model_2022
+    market_structure_shift --> model_2022
+    relative_equal_highs_lows --> model_2022
+    sessions_and_ranges --> model_2022
+    targets_and_exits --> model_2022
+    swing_points --> relative_equal_highs_lows
+    daily_bias --> sniper_model
+    liquidity_sweep_stop_hunt --> sniper_model
+    smt_divergence --> sniper_model
+    market_structure_shift --> sniper_model
+```
+<!-- lineage-end -->
 
 ## Disclaimer
 

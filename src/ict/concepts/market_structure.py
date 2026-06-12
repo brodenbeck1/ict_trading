@@ -16,7 +16,7 @@ from ict.utils.time_utils import localize_like
 
 
 @concept("swing-points")
-class SwingPointScanner:
+class SwingPointScanner:  # no depends_on — primitive
     """
     Identifies swing highs and swing lows based on ICT methodology.
     A swing high has lower highs on both left and right sides.
@@ -222,7 +222,7 @@ class SwingPointScanner:
 # See knowledge/ict/market-structure/market-structure-shift.md
 # ---------------------------------------------------------------------------
 
-@concept("market-structure-shift")
+@concept("market-structure-shift", depends_on=["swing-points"])
 def detect_mss(
     df: pd.DataFrame,
     direction: str,
@@ -314,7 +314,7 @@ def detect_mss(
 # See knowledge/ict/liquidity/relative-equal-highs-lows.md
 # ---------------------------------------------------------------------------
 
-@concept("relative-equal-highs-lows")
+@concept("relative-equal-highs-lows", depends_on=["swing-points"])
 def find_relative_equal_levels(
     df: pd.DataFrame,
     before: pd.Timestamp,

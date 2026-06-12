@@ -54,38 +54,50 @@ loader = DataLoader(timeframe='5T', data_dir=data_dir)
 ## Project Structure
 
 ```
-ict_trading/                          # repo root (git, pyproject.toml, .venv/)
-├── Data/                             # price data — gitignored except prep/ (see Data section)
-│   ├── *_futures_1m_cleaned.csv      #   ~1.1 GB cleaned continuous contracts (untracked)
-│   ├── raw/                          #   databento .zst downloads (untracked)
-│   └── prep/                         #   data acquisition pipeline, databento (TRACKED)
-├── knowledge/                        # semantic layer: concept libraries (markdown + YAML frontmatter)
-│   ├── ict/                          #   ICT concepts + named models (7 category folders)
-│   ├── romeo/                        #   Romeo — Candle Range Theory (CRT)
-│   └── currency-merchant/            #   Kishane — Time Theory / 90-min cycles / Rules of Engagement
-├── src/ict/                          # the installable package  (pip install -e .)
-│   ├── registry.py                   #   @concept decorator + frontmatter loader (binds knowledge <-> code)
-│   ├── data/loader.py                #   DataLoader
-│   ├── concepts/                     #   primitives: market_structure.py, fair_value_gap.py, ...
-│   └── models/{ict,romeo,merchant}/  #   composite models, grouped by author
-├── strategies/notes/                 # human strategy write-ups (output of /strategy-from-transcript)
-├── backtests/                        # backtest runner scripts (write outputs to results/)
-├── examples/                         # minimal scripts that verify a model runs
-├── scripts/                          # one-off utilities (read_data.py, print_daily_bars.py)
-├── tests/                            # pytest: registry coverage + detector smoke (+ fixtures/)
-├── legacy/                           # superseded orphan modules — NOT imported (see legacy/README.md)
-├── results/                          # backtest outputs — gitignored
+ict_trading/                              # repo root (git, pyproject.toml, .venv/)
+├── Data/                                 # price data — gitignored except prep/ (see Data section)
+│   ├── *_futures_1m_cleaned.csv          #   ~1.1 GB cleaned continuous contracts (untracked)
+│   ├── raw/                              #   databento .zst downloads (untracked)
+│   └── prep/                             #   data acquisition pipeline, databento (TRACKED)
+├── knowledge/                            # semantic layer: concept libraries (markdown + YAML frontmatter)
+│   ├── ict/                              #   ICT concepts + named models (7 category folders)
+│   ├── romeo/                            #   Romeo — Candle Range Theory (CRT)
+│   └── currency-merchant/                #   Kishane — Time Theory / 90-min cycles / Rules of Engagement
+├── src/ict/                              # the installable package  (pip install -e .)
+│   ├── registry.py                       #   @concept decorator + frontmatter loader + lineage graph
+│   ├── data/loader.py                    #   DataLoader
+│   ├── concepts/                         #   primitive detectors (single-concept, no orchestration)
+│   ├── models/intermediate/              #   multi-concept compositions used by full models
+│   └── models/{ict,romeo,merchant}/      #   full trading models, grouped by author
+├── strategies/notes/                     # human strategy write-ups (output of /strategy-from-transcript)
+├── backtests/                            # backtest runner scripts (write outputs to results/)
+├── examples/                             # minimal scripts that verify a model runs
+├── scripts/                              # utilities: lineage.py, read_data.py, print_daily_bars.py
+├── tests/                                # pytest: registry coverage + detector smoke (+ fixtures/)
+├── legacy/                               # superseded orphan modules — NOT imported (see legacy/README.md)
+├── results/                              # backtest outputs — gitignored
 ├── pyproject.toml
 └── CLAUDE.md
 ```
 
+**Three-layer architecture** — enforced by where files live:
+
+| Layer | Location | Rule |
+|---|---|---|
+| **Concept** | `src/ict/concepts/` | Implements exactly one KB concept; no imports from other concepts |
+| **Intermediate** | `src/ict/models/intermediate/` | Composes 2+ concepts into a reusable gate/signal (e.g. `daily_bias`) |
+| **Model** | `src/ict/models/<author>/` | Full trading strategy; composes concepts + intermediate models |
+
 The markdown in `knowledge/` is the **semantic layer**: one file per concept, each with
 frontmatter (`name`, `aliases`, `category`, `related`, `parameters`, `detection`) and a
-"Detection Rules" section. `src/ict/registry.py` binds it to code — a detector registers
-against a concept slug with `@concept("<slug>")`, and `tests/test_registry_coverage.py`
-fails if a concept's `detection:` flag and the registered detectors disagree. Pull a
-concept's default config from its frontmatter with `ict.registry.params("<slug>")`.
-Currently implemented detectors: `swing-points`, `fair-value-gap`, `daily-bias`.
+"Detection Rules" section. `src/ict/registry.py` binds it to code:
+
+- Register a detector with `@concept("<slug>")`.
+- Declare dependencies with `@concept("<slug>", depends_on=["other-slug", ...])` — this powers the lineage graph.
+- `tests/test_registry_coverage.py` fails if a concept's `detection:` flag and registered detectors disagree.
+- Pull default config from frontmatter with `ict.registry.params("<slug>")`.
+- Query the dependency tree: `ict.registry.lineage("<slug>")` returns the transitive dict; `ict.registry.mermaid("<slug>")` returns a Mermaid string.
+- Regenerate the README diagram: `.venv/bin/python scripts/lineage.py --update-readme`.
 
 ---
 
@@ -161,10 +173,16 @@ class MyModel:
 ## Adding a New Strategy
 
 1. Run `/strategy-from-transcript` with the video transcript → review the notes file in `strategies/notes/` (and the relevant concept files under `knowledge/`)
-2. Create the model in `src/ict/models/<author>/<strategy_name>.py` following the model pattern; if it implements a `knowledge/` concept, decorate its entry point with `@concept("<slug>")`
-3. Implement `generate_signal(snapshot)` using the checklist from the notes file
-4. Create `examples/<strategy_name>_example.py` to verify the model runs
-5. Backtest with a runner in `backtests/`; outputs land in `results/`
+2. Decide the layer for each new piece of logic:
+   - **Single primitive** (e.g. a new session range detector) → `src/ict/concepts/<name>.py`, register with `@concept("<slug>")`
+   - **Multi-concept gate** reused across models (e.g. a new bias signal) → `src/ict/models/intermediate/<name>.py`
+   - **Full strategy** → `src/ict/models/<author>/<name>.py`
+3. Register the entry point with `@concept("<slug>", depends_on=["dep-slug", ...])` — list every concept/intermediate it directly calls
+4. Create (or update) the matching `knowledge/` markdown file; set `detection: implemented`
+5. Implement `generate_signal(snapshot)` using the checklist from the notes file
+6. Run `.venv/bin/python scripts/lineage.py --update-readme` to regenerate the README diagram
+7. Create `examples/<strategy_name>_example.py` to verify the model runs
+8. Backtest with a runner in `backtests/`; outputs land in `results/`
 
 ---
 

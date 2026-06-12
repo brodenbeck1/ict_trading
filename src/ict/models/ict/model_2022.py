@@ -44,7 +44,7 @@ class Model2022Snapshot:
     session_date: pd.Timestamp
 
 
-@concept("model-2022")
+@concept("model-2022", depends_on=["daily-bias", "fair-value-gap", "killzones", "market-structure-shift", "relative-equal-highs-lows", "sessions-and-ranges", "targets-and-exits"])
 class Model2022:
     """
     ICT 2022 Model — FVG + Liquidity Sweep intraday model.

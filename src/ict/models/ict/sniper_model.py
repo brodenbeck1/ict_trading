@@ -18,6 +18,7 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+from ict.registry import concept
 from ict.models.intermediate.daily_bias import daily_bias_components, ohlc_candle_profile
 from ict.concepts.liquidity_sweep import detect_liquidity_sweep
 from ict.concepts.smt_divergence import detect_smt
@@ -39,6 +40,7 @@ class SniperSnapshot:
     higher_timeframe_df: pd.DataFrame
 
 
+@concept("sniper-model", depends_on=["daily-bias", "liquidity-sweep-stop-hunt", "smt-divergence", "market-structure-shift"])
 class SniperModel:
     """
     ICT daily bias checklist model.

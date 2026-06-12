@@ -16,7 +16,7 @@ from ict.registry import concept
 from ict.concepts.market_structure import SwingPointScanner
 
 
-@concept("draw-on-liquidity")
+@concept("draw-on-liquidity", depends_on=["swing-points"])
 def draw_on_liquidity(
     daily_df: pd.DataFrame,
     dealing_range_days: int = 20,
