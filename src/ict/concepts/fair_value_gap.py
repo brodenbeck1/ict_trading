@@ -19,6 +19,8 @@ Bullish FVG (displacement candle is candle[i], moving up):
 import pandas as pd
 from dataclasses import dataclass
 
+from ict.registry import concept
+
 
 @dataclass
 class FVG:
@@ -29,6 +31,7 @@ class FVG:
     entry: float              # limit entry price
 
 
+@concept("fair-value-gap")
 def find_fvgs(df: pd.DataFrame, direction: str = 'bearish') -> list:
     """
     Scan df for Fair Value Gaps. Returns list of FVG objects in chronological order.

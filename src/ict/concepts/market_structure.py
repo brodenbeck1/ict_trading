@@ -11,7 +11,10 @@ import pandas as pd
 import numpy as np
 from typing import Literal
 
+from ict.registry import concept
 
+
+@concept("swing-points")
 class SwingPointScanner:
     """
     Identifies swing highs and swing lows based on ICT methodology.

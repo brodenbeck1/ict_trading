@@ -23,6 +23,8 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from ict.registry import concept
+
 
 @dataclass
 class MarketSnapshot:
@@ -39,6 +41,7 @@ class MarketSnapshot:
     higher_timeframe_df: pd.DataFrame
 
 
+@concept("daily-bias")
 class DailyBiasModel:
     """
     Implements ICT daily bias methodology for intraday trading decisions.

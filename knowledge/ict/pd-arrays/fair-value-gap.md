@@ -7,7 +7,7 @@ parameters:
   min_gap_size: "points; project decision: 0 (any gap qualifies)"
   entry_edge: "limit at the near edge of the gap (project decision: top of FVG for shorts, bottom for longs)"
   mitigation_rule: "touched = partially mitigated; full fill = rebalanced; close beyond = inverted"
-detection: not-implemented
+detection: implemented   # find_fvgs in src/ict/concepts/fair_value_gap.py
 ---
 
 # Fair Value Gap (FVG)
