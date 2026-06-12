@@ -1,0 +1,35 @@
+# ── Python ──
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.so
+
+# ── Virtual environments ──
+.venv/
+venv/
+env/
+ENV/
+
+# ── Secrets ──
+.env
+**/.env
+*.key
+
+# ── OS / editor ──
+.DS_Store
+.idea/
+.vscode/
+
+# ── Data artifacts: large & regenerable from Data/prep/ (KEEP prep/ + README) ──
+Data/*.csv
+Data/raw/
+Data/*.json
+
+# ── Backtest outputs ──
+results/
+
+# ── Jupyter ──
+.ipynb_checkpoints/

@@ -1,0 +1,108 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+pytest_cache/
+.pytest_cache/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+*.ipynb
+
+# mypy / type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Cython debug symbols
+cython_debug/
+
+# Logs
+*.log
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# macOS
+.DS_Store
+
+# Environment / secrets
+.env
+*.env
+.env.*
+secrets.*
+api_key.*
+
+# Local data artifacts
+data/
+data_raw/
+tmp/
+temp/
+*.sqlite
+*.db
+
+# Generated docs
+/site/
+docs/_build/
+
+# Cache
+__pypackages__/
+*.egg-info/
+
+# Node (if any frontend)
+node_modules/
+
+# Docker
+*.pid
+
+# Coverage reports
+coverage/

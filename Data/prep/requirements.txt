@@ -1,0 +1,4 @@
+# ZST to CSV Converter Dependencies
+zstandard>=0.22.0
+pandas>=2.0.0
+databento
