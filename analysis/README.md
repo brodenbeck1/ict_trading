@@ -82,3 +82,4 @@ Do not edit an existing analysis file to reflect new results. Instead, create a 
 | File | Model | Concept | Date | Summary |
 |---|---|---|---|---|
 | [model-2022-daily-bias-2026-06-13.md](daily-bias/model-2022-daily-bias-2026-06-13.md) | model-2022 | daily-bias | 2026-06-13 | Grid search across 12 gate combos; hard 4H gate best; London 0 trades; NY AM longs 0-for-7; 10-13:30 UTC window untapped |
+| [currency-merchant-dxy-weekly-bias-plan-2026-06-14.md](dxy-weekly-bias/currency-merchant-dxy-weekly-bias-plan-2026-06-14.md) | currency-merchant | dxy-weekly-bias | 2026-06-14 | Build plan: weekly DXY pool reaction (MSS/CISD) → NQ weekly bias; in-progress |

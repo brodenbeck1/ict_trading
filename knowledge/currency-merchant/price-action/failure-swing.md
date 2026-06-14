@@ -1,9 +1,9 @@
 ---
 name: failure-swing
-aliases: [FS, HPFS, high-probability failure swing, failure string]
+aliases: [FS, HPFS, RB HPFS, OB HPFS, high-probability failure swing, rejection block HPFS, order block HPFS, failure string]
 category: price-action
 related: [draw-on-liquidity, pa-flow, imbalances-to-liquidity, liquidity-sweep-stop-hunt]
-ict_refs: [liquidity-sweep-stop-hunt, buy-side-liquidity, sell-side-liquidity]
+ict_refs: [liquidity-sweep-stop-hunt, buy-side-liquidity, sell-side-liquidity, rejection-block, order-block]
 source_coverage: partial-public
 parameters:
   scan_forward_bars: 6        # max bars after LTC to find the HPFS candle
@@ -27,96 +27,148 @@ immediately after a confirmed liquidity sweep. It is high probability because:
 3. Stops accumulate above (bearish HPFS) or below (bullish HPFS) the untested
    extreme, making it a prime raid target
 
+There are **two variants** depending on whether the LTC takes liquidity with its
+wick or its body:
+
 ---
 
-## Detection Rules
+## Variant 1 — Rejection Block HPFS (RB HPFS)
 
-### Step 1 — Identify the Liquidity-Taking Candle (LTC)
+The **wick** of the LTC takes liquidity. The candle sweeps the prior high/low but
+the **close** falls back on the originating side — a classic rejection / wick sweep.
 
-**Bearish LTC**: a candle whose high exceeds the prior candle's high (sweeps buy
-stops above) but whose close falls back below that prior high (rejection).
+### Step 1 — Identify the LTC (Rejection Block)
 
-- `high[i] > high[i-1]`  ← takes prior high (sweeps buy-side liquidity)
-- `close[i] < high[i-1]` ← closes back below the swept level (rejection confirmed)
+**Bearish RB LTC**: wick sweeps prior high, close rejects back below it.
+- `high[i] > high[i-1]`  ← wick takes buy-side (sweeps above prior high)
+- `close[i] < high[i-1]` ← close falls back below the swept level
 
-**Bullish LTC**: mirror — low sweeps below the prior candle's low, close recovers
-above it.
-
-The swept level does not have to be a raw candle high/low. It can be any named
-liquidity pool: a prior HPFS level, a session high/low, an equal-highs cluster,
-etc. The rule is the same regardless of the source of liquidity.
+**Bullish RB LTC**: mirror — wick sweeps below prior low, close recovers above.
+- `low[i] < low[i-1]`
+- `close[i] > low[i-1]`
 
 ### Step 2 — Find the HPFS Candle
 
-After the LTC, scan forward candle by candle. The **first candle** whose:
+Scan forward from the LTC. The **first candle** whose extreme is inside the LTC
+body (between open and close):
 
-- **Bearish HPFS**: `high[j] < open[i]` — high is inside the LTC body (below LTC open)
-- **Bullish HPFS**: `low[j] > open[i]`  — low is inside the LTC body (above LTC open)
+- **Bearish**: `high[j] < open[i]` → HPFS level = `high[j]`
+- **Bullish**: `low[j] > open[i]`  → HPFS level = `low[j]`
 
-That candle's high (bearish) or low (bullish) = the **HPFS level**.
+---
 
-There may be 1–2 candles between the LTC and the HPFS candle whose extremes are
-still above the LTC open; skip those and continue scanning until the condition
-is met.
+## Variant 2 — Order Block HPFS (OB HPFS)
 
-### Validity
+The **body** of the LTC takes liquidity. The candle's close crosses the prior
+high/low — the body (not just a wick) consumed the opposing liquidity, creating
+an order block structure.
+
+### Step 1 — Identify the LTC (Order Block)
+
+**Bearish OB LTC**: body (close) takes buy-side — candle closes *above* prior high.
+- `close[i] > high[i-1]` ← body consumed buy-side liquidity
+
+**Bullish OB LTC**: body (close) takes sell-side — candle closes *below* prior low.
+- `close[i] < low[i-1]`
+
+### Step 2 — Find the HPFS Candle
+
+Identical to the RB variant — scan forward for the first candle whose extreme is
+inside the LTC body:
+
+- **Bearish**: `high[j] < open[i]` → HPFS level = `high[j]`
+- **Bullish**: `low[j] > open[i]`  → HPFS level = `low[j]`
+
+The OB HPFS level is the high of the first candle that falls back inside the OB
+candle's body — it is a failure swing within the distribution zone of the order
+block.
+
+---
+
+## Key Distinction
+
+| | RB HPFS | OB HPFS |
+|---|---|---|
+| What takes liquidity | Wick | Body (close) |
+| LTC condition (bearish) | `high > prior_high` AND `close < prior_high` | `close > prior_high` |
+| HPFS scan condition | `high[j] < open[LTC]` | `high[j] < open[LTC]` |
+| LTC structure | Rejection block (wick sweep) | Order block (body through) |
+
+Both share the same HPFS detection step — the distinction is entirely in how the
+LTC is identified.
+
+---
+
+## Validity
 
 - The HPFS level must remain untested (no subsequent candle takes it) to stay
-  active. Once taken, it is consumed and the process restarts (see Recursive
-  Property below).
+  active. Once taken, it is consumed and the process restarts.
 - Invalidation: any candle closes beyond the HPFS level in the direction of the
-  original sweep (e.g., closes above the HPFS high for a bearish setup) → the
-  sweep has failed to produce a reversal; the HPFS is no longer valid.
+  original sweep (e.g., closes above the HPFS high for a bearish setup).
 
 ---
 
 ## Recursive Property
 
 A HPFS level is itself a liquidity pool. When price returns and sweeps the HPFS
-level (using that as the next LTC), the identical process restarts:
+level, the identical process restarts:
 
 1. HPFS level exists as resting liquidity
-2. A new LTC sweeps through that HPFS level and closes back (rejection)
+2. A new LTC sweeps through that HPFS level (wick for RB, body for OB)
 3. First subsequent candle with extreme inside the new LTC body = new HPFS
 
-This means HPFS levels chain in a trending move, each one forming after the
-prior is taken. In a sustained down leg you will see stair-stepping HPFS highs,
-each sitting progressively lower, each created by the raid of the prior one.
+In a sustained down leg you will see stair-stepping HPFS highs, each created by
+the raid of the prior one.
 
-The source of the swept liquidity is irrelevant to the formation logic — raw
-candle extremes, prior HPFS levels, session highs/lows, and named pools all
-trigger the same HPFS formation sequence when swept and rejected.
+---
+
+## Relationship to Swing Without Liquidity
+
+The complement concept is [[swing-without-liquidity]] — a swing that already consumed
+a prior swing. Those are disqualified as DOL candidates because the liquidity there has
+already been distributed. HPFS is what remains after filtering those out.
 
 ---
 
 ## Relationship to Draw on Liquidity
 
-HPFS levels are a valid source of DOL (see [[draw-on-liquidity]]). In Kishane's
-framework a high counts as buy-side liquidity only if it did **not** already
-take a previous high (the "failure strings excluded" pool validity rule). A HPFS
-high fits this — it is a high that formed without sweeping above a prior high,
-making it untouched buy-side that the algorithm is likely to deliver price toward.
+HPFS levels are a valid source of DOL (see [[draw-on-liquidity]]). A HPFS high
+fits Kishane's pool validity rule — it is a high that formed without sweeping
+above a prior high, making it untouched buy-side that the algorithm is likely
+to deliver price toward.
 
 ---
 
 ## Detection Rules (Implementation Notes)
 
-```
-bearish_ltc(i):
-    high[i] > high[i-1]       # swept buy-side
-    close[i] < high[i-1]      # rejected back below
+```python
+# RB HPFS — wick takes
+def rb_ltc_bearish(i): return high[i] > high[i-1] and close[i] < high[i-1]
+def rb_ltc_bullish(i): return low[i]  < low[i-1]  and close[i] > low[i-1]
 
-bearish_hpfs(i, scan_forward=6):
-    for j in range(i+1, i+1+scan_forward):
-        if high[j] < open[i]:
-            return j, high[j]   # first candle inside LTC body = HPFS
+# OB HPFS — body takes
+def ob_ltc_bearish(i): return close[i] > high[i-1]
+def ob_ltc_bullish(i): return close[i] < low[i-1]
+
+# HPFS scan — same for both variants
+def find_hpfs_candle(ltc_bar, direction, scan_forward=6):
+    for j in range(ltc_bar + 1, ltc_bar + 1 + scan_forward):
+        if direction == 'bearish' and high[j] < open[ltc_bar]:
+            return j, high[j]    # HPFS candle index, HPFS level
+        if direction == 'bullish' and low[j] > open[ltc_bar]:
+            return j, low[j]
     return None
 
-hpfs_valid(j, untested_bars=20):
-    max(high[j+1 : j+1+untested_bars]) < high[j]
+# Validity check
+def hpfs_active(hpfs_bar, direction, untested_bars=20):
+    if direction == 'bearish':
+        return max(high[hpfs_bar+1 : hpfs_bar+1+untested_bars]) < high[hpfs_bar]
+    return min(low[hpfs_bar+1 : hpfs_bar+1+untested_bars]) > low[hpfs_bar]
 ```
 
-Mirror for bullish (swap high↔low, invert comparisons).
+Parameters:
+- `scan_forward` (default 6): bars after LTC to search for the HPFS candle
+- `untested_bars` (default 20): bars to check for consumption after formation
 
 ---
 

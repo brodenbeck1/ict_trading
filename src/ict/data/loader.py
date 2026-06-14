@@ -61,7 +61,9 @@ class DataLoader:
         filename_map = {
             'NQ': 'nq_futures_1m_cleaned.csv',
             'ES': 'es_futures_1m_cleaned.csv',
-            'YM': 'ym_futures_1m_cleaned.csv'
+            'YM': 'ym_futures_1m_cleaned.csv',
+            'DXY_DAILY': 'dxy_daily.csv',
+            'DXY_1H': 'dxy_1h.csv',
         }
         
         filepath = self.data_dir / filename_map[symbol]
@@ -103,6 +105,26 @@ class DataLoader:
         """Load Dow Jones futures (YM) data."""
         return self._load_and_resample('YM')
     
+    def read_DXY(self, resolution: str = 'daily') -> pd.DataFrame:
+        """Load DXY (US Dollar Index) data.
+
+        Args:
+            resolution: 'daily' (2010–present) or '1h' (last ~730 days).
+        """
+        key = 'DXY_DAILY' if resolution == 'daily' else 'DXY_1H'
+        filepath = self.data_dir / {'DXY_DAILY': 'dxy_daily.csv', 'DXY_1H': 'dxy_1h.csv'}[key]
+        if not filepath.exists():
+            raise FileNotFoundError(
+                f"DXY data not found at {filepath}. "
+                "Run scripts/fetch_dxy.py to download."
+            )
+        df = pd.read_csv(filepath, index_col='timestamp', parse_dates=True)
+        df = df.sort_index()
+        if self.weeks is not None:
+            cutoff = df.index.max() - pd.Timedelta(weeks=self.weeks)
+            df = df[df.index >= cutoff]
+        return df
+
     def read_all(self) -> dict:
         """
         Load all available futures data.

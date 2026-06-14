@@ -11,6 +11,7 @@ This module contains the fundamental ICT trading concepts:
 
 from ict.concepts.market_structure import SwingPointScanner, detect_mss, find_relative_equal_levels
 from ict.concepts.fair_value_gap import FVG, find_fvgs
+from ict.concepts.order_block import OrderBlock, find_order_blocks
 from ict.concepts.draw_on_liquidity import draw_on_liquidity, draw_on_liquidity_levels
 from ict.concepts.premium_discount import premium_discount, premium_discount_levels
 from ict.concepts.ohlc_profiles import ohlc_candle_profile, entry_side_valid
@@ -23,6 +24,7 @@ from ict.concepts.targets import find_liquidity_target, rr_ratio
 __all__ = [
     'SwingPointScanner', 'detect_mss', 'find_relative_equal_levels',
     'FVG', 'find_fvgs',
+    'OrderBlock', 'find_order_blocks',
     'draw_on_liquidity', 'draw_on_liquidity_levels',
     'premium_discount', 'premium_discount_levels',
     'ohlc_candle_profile', 'entry_side_valid',

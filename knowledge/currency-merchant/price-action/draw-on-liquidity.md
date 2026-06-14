@@ -11,7 +11,7 @@ parameters:
   daily_stop_rule: "if bullish, an old daily low must be taken before the run higher (and vice versa)"
   trade_start_time: "08:00 NY (not before)"
   london_close_caution: "10:00–12:00 NY — profits being taken, high reversal risk"
-  valid_pool_rule: "a high/low only qualifies as DOL if it did NOT already take a previous high/low (failure strings excluded)"
+  valid_pool_rule: "a high/low only qualifies as DOL if it did NOT already take a previous high/low (swings without liquidity excluded) — qualifying swings are HPFS"
 detection: not-implemented
 ---
 
@@ -55,16 +55,16 @@ from here to find what it will deliver price to.
 ### Bearish week (DXY bullish)
 - All candidate pools must be **below** the weekly open
 
-### Pool validity rule — "failure strings" excluded
-A high or low only counts as liquidity **if it did NOT already take a previous swing high/low**:
-- A high that took out the prior high = a "failure string" — no unfilled orders sitting
-  there, already distributed
-- A high that did **not** take a prior high = valid buy side — orders likely still resting
+### Pool validity rule — swings without liquidity excluded
+A high or low only counts as a DOL candidate (HPFS) **if it did NOT already take a previous swing high/low**:
+- A high that took out the prior high = a [[swing-without-liquidity]] — no unfilled orders
+  sitting there, already distributed
+- A high that did **not** take a prior high = HPFS — orders likely still resting above it
 
 > "I never considered these daily highs as liquidity draw because they took out previous
 > liquidity. This would be liquidity because none of these took a previous weekly high."
 
-Common valid pool types above weekly open (bullish):
+Common HPFS types above weekly open (bullish):
 - FVG / CV (fair value gap / consequent void) from a prior selling leg — business was
   left undone at that price level
 - Failure swing high (approached but never closed above the draw)

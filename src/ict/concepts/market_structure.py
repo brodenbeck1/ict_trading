@@ -222,34 +222,45 @@ class SwingPointScanner:  # no depends_on — primitive
 # See knowledge/ict/market-structure/market-structure-shift.md
 # ---------------------------------------------------------------------------
 
-@concept("market-structure-shift", depends_on=["swing-points"])
+@concept("market-structure-shift", depends_on=["swing-points", "break-away-gap", "dark-pool"])
 def detect_mss(
     df: pd.DataFrame,
     direction: str,
     swing_lookback: int = 3,
     max_bars_after_sweep: int = 30,
     sweep_time: Optional[pd.Timestamp] = None,
+    bags: Optional[list] = None,
+    dark_pools: Optional[list] = None,
 ) -> Optional[dict]:
     """
     Detect a Market Structure Shift (MSS / CHoCH).
 
-    A counter-trend break of the most recent opposing swing level, ideally with
-    displacement, following a liquidity sweep. This is the confirmation step in the
-    entry sequence: sweep → MSS → retrace → deliver.
+    Two types are supported:
+      Type 1 — close breaks the most recent opposing swing level (classic).
+      Type 2 — close past the far edge of an opposing BAG or Dark Pool zone.
+               Requires bags / dark_pools lists to be passed in (duck-typed;
+               no import to avoid circular dependency).
 
     Args:
         df:                   Intraday OHLCV bars (1m/3m/5m).
-        direction:            'bearish' — price breaks a swing low after sweeping highs;
-                              'bullish' — price breaks a swing high after sweeping lows.
+        direction:            'bearish' — confirms bearish delivery;
+                              'bullish' — confirms bullish delivery.
         swing_lookback:       Bar lookback for SwingPointScanner.
         max_bars_after_sweep: If sweep_time given, only consider breaks within this
                               many bars after the sweep.
         sweep_time:           Optional timestamp of the preceding sweep; used to
                               time-link the MSS.
+        bags:                 Optional list of BreakAwayGap objects. Used for Type 2
+                              detection. Bearish direction checks bearish BAGs;
+                              bullish checks bullish BAGs.
+        dark_pools:           Optional list of DarkPool objects. Same direction
+                              convention as bags.
 
     Returns:
-        dict with keys {direction, broken_level, break_time, sweep_ref, bar_index}
-        or None if no MSS detected.
+        dict with keys {direction, broken_level, break_time, sweep_ref, bar_index,
+        mss_type, pd_array_kind} or None if no MSS detected.
+        mss_type is 'type1' or 'type2'. pd_array_kind is 'bag' or 'dark_pool'
+        (only present for type2).
     """
     if df is None or len(df) < swing_lookback * 2 + 1:
         return None
@@ -271,48 +282,108 @@ def detect_mss(
     scanner = SwingPointScanner(pre_df, lookback=swing_lookback)
     scanner.identify_swings()
 
+    # Type 2 uses zones whose direction is OPPOSITE to the MSS direction:
+    # bearish MSS closes below the bottom of a bullish BAG/DP;
+    # bullish MSS closes above the top of a bearish BAG/DP.
+    opp = 'bullish' if direction == 'bearish' else 'bearish'
+    dir_bags = [b for b in (bags or []) if b.direction == opp]
+    dir_dps  = [d for d in (dark_pools or []) if d.direction == opp]
+
     if direction == 'bearish':
         lows = (scanner.swing_lows['swing_low_price'].dropna()
                 if scanner.swing_lows is not None else pd.Series(dtype=float))
-        if len(lows) == 0:
-            return None
-        pivot_low = float(lows.iloc[-1])
-        pivot_time = lows.index[-1]
+        pivot_low  = float(lows.iloc[-1]) if len(lows) else None
+        pivot_time = lows.index[-1]       if len(lows) else None
 
         for i in range(len(search_df)):
             bar = search_df.iloc[i]
             t   = search_df.index[i]
-            if t <= pivot_time:
-                continue
-            if bar['close'] < pivot_low:
-                return {
-                    'direction': 'bearish',
-                    'broken_level': pivot_low,
-                    'break_time': t,
-                    'sweep_ref': sweep_time,
-                    'bar_index': df.index.get_indexer([t], method='nearest')[0],
-                }
-    else:
+
+            # Type 1: close breaks swing low
+            if pivot_low is not None and pivot_time is not None and t > pivot_time:
+                if bar['close'] < pivot_low:
+                    return {
+                        'direction':    'bearish',
+                        'broken_level': pivot_low,
+                        'break_time':   t,
+                        'sweep_ref':    sweep_time,
+                        'bar_index':    df.index.get_indexer([t], method='nearest')[0],
+                        'mss_type':     'type1',
+                    }
+
+            # Type 2: close past far edge of a bearish BAG
+            for bag in dir_bags:
+                if bag.fvg.timestamp < t and bar['close'] < bag.fvg.bottom:
+                    return {
+                        'direction':    'bearish',
+                        'broken_level': bag.fvg.bottom,
+                        'break_time':   t,
+                        'sweep_ref':    sweep_time,
+                        'bar_index':    df.index.get_indexer([t], method='nearest')[0],
+                        'mss_type':     'type2',
+                        'pd_array_kind': 'bag',
+                    }
+
+            # Type 2: close past far edge of a bearish Dark Pool
+            for dp in dir_dps:
+                if dp.timestamp < t and bar['close'] < dp.bottom:
+                    return {
+                        'direction':    'bearish',
+                        'broken_level': dp.bottom,
+                        'break_time':   t,
+                        'sweep_ref':    sweep_time,
+                        'bar_index':    df.index.get_indexer([t], method='nearest')[0],
+                        'mss_type':     'type2',
+                        'pd_array_kind': 'dark_pool',
+                    }
+
+    else:  # bullish
         highs = (scanner.swing_highs['swing_high_price'].dropna()
                  if scanner.swing_highs is not None else pd.Series(dtype=float))
-        if len(highs) == 0:
-            return None
-        pivot_high = float(highs.iloc[-1])
-        pivot_time = highs.index[-1]
+        pivot_high = float(highs.iloc[-1]) if len(highs) else None
+        pivot_time = highs.index[-1]       if len(highs) else None
 
         for i in range(len(search_df)):
             bar = search_df.iloc[i]
             t   = search_df.index[i]
-            if t <= pivot_time:
-                continue
-            if bar['close'] > pivot_high:
-                return {
-                    'direction': 'bullish',
-                    'broken_level': pivot_high,
-                    'break_time': t,
-                    'sweep_ref': sweep_time,
-                    'bar_index': df.index.get_indexer([t], method='nearest')[0],
-                }
+
+            # Type 1: close breaks swing high
+            if pivot_high is not None and pivot_time is not None and t > pivot_time:
+                if bar['close'] > pivot_high:
+                    return {
+                        'direction':    'bullish',
+                        'broken_level': pivot_high,
+                        'break_time':   t,
+                        'sweep_ref':    sweep_time,
+                        'bar_index':    df.index.get_indexer([t], method='nearest')[0],
+                        'mss_type':     'type1',
+                    }
+
+            # Type 2: close past far edge of a bullish BAG
+            for bag in dir_bags:
+                if bag.fvg.timestamp < t and bar['close'] > bag.fvg.top:
+                    return {
+                        'direction':    'bullish',
+                        'broken_level': bag.fvg.top,
+                        'break_time':   t,
+                        'sweep_ref':    sweep_time,
+                        'bar_index':    df.index.get_indexer([t], method='nearest')[0],
+                        'mss_type':     'type2',
+                        'pd_array_kind': 'bag',
+                    }
+
+            # Type 2: close past far edge of a bullish Dark Pool
+            for dp in dir_dps:
+                if dp.timestamp < t and bar['close'] > dp.top:
+                    return {
+                        'direction':    'bullish',
+                        'broken_level': dp.top,
+                        'break_time':   t,
+                        'sweep_ref':    sweep_time,
+                        'bar_index':    df.index.get_indexer([t], method='nearest')[0],
+                        'mss_type':     'type2',
+                        'pd_array_kind': 'dark_pool',
+                    }
 
     return None
 
