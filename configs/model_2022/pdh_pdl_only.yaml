@@ -1,0 +1,22 @@
+name: pdh_pdl_only
+description: "Only PDH/PDL as entry pools — isolates the simplest pool set"
+
+start_date: "2024-11-01"
+instrument: NQ
+use_daily_bias: false
+
+stop_mode: wick
+max_stop_pts: 20.0
+target_min_rr: 3.0
+
+use_pdh_pdl: true
+use_ons: false
+use_chicago_prior: false
+use_chicago_same_day: false
+use_opening_range: false
+use_reh_rel: false
+
+killzones:
+  - ["02:00", "05:00"]
+  - ["07:00", "10:00"]
+  - ["13:30", "16:00"]

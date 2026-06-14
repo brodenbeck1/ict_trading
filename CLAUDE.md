@@ -53,32 +53,11 @@ loader = DataLoader(timeframe='5T', data_dir=data_dir)
 
 ## Project Structure
 
-```
-ict_trading/                              # repo root (git, pyproject.toml, .venv/)
-├── Data/                                 # price data — gitignored except prep/ (see Data section)
-│   ├── *_futures_1m_cleaned.csv          #   ~1.1 GB cleaned continuous contracts (untracked)
-│   ├── raw/                              #   databento .zst downloads (untracked)
-│   └── prep/                             #   data acquisition pipeline, databento (TRACKED)
-├── knowledge/                            # semantic layer: concept libraries (markdown + YAML frontmatter)
-│   ├── ict/                              #   ICT concepts + named models (7 category folders)
-│   ├── romeo/                            #   Romeo — Candle Range Theory (CRT)
-│   └── currency-merchant/                #   Kishane — Time Theory / 90-min cycles / Rules of Engagement
-├── src/ict/                              # the installable package  (pip install -e .)
-│   ├── registry.py                       #   @concept decorator + frontmatter loader + lineage graph
-│   ├── data/loader.py                    #   DataLoader
-│   ├── concepts/                         #   primitive detectors (single-concept, no orchestration)
-│   ├── models/intermediate/              #   multi-concept compositions used by full models
-│   └── models/{ict,romeo,merchant}/      #   full trading models, grouped by author
-├── strategies/notes/                     # human strategy write-ups (output of /strategy-from-transcript)
-├── backtests/                            # backtest runner scripts (write outputs to results/)
-├── examples/                             # minimal scripts that verify a model runs
-├── scripts/                              # utilities: lineage.py, read_data.py, print_daily_bars.py
-├── tests/                                # pytest: registry coverage + detector smoke (+ fixtures/)
-├── legacy/                               # superseded orphan modules — NOT imported (see legacy/README.md)
-├── results/                              # backtest outputs — gitignored
-├── pyproject.toml
-└── CLAUDE.md
-```
+Key directories (`ls` the repo for the full tree):
+- `knowledge/` — semantic layer: concept libraries (markdown + YAML frontmatter), grouped `ict/`, `romeo/`, `currency-merchant/`
+- `src/ict/` — installable package: `registry.py` (`@concept` + lineage), `data/loader.py` (DataLoader), `concepts/` (primitives), `models/intermediate/` + `models/{ict,romeo,merchant}/` (see `src/ict/models/README.md`)
+- `strategies/notes/` — strategy write-ups · `backtests/` — runner scripts → `results/` (gitignored) · `configs/` — named experiments (see `configs/README.md`) · `analysis/` — backtest findings (see `analysis/README.md`)
+- `scripts/`, `examples/`, `tests/` (+ `fixtures/`), `legacy/` (NOT imported)
 
 **Three-layer architecture** — enforced by where files live:
 
@@ -110,36 +89,11 @@ frontmatter (`name`, `aliases`, `category`, `related`, `parameters`, `detection`
 
 ---
 
-## Model Pattern
+## Model Pattern & Adding a New Strategy
 
-Every trading model follows this structure:
+The `MarketSnapshot`/`generate_signal` model template and the step-by-step workflow for adding a strategy live in **`src/ict/models/README.md`** — read it before writing a new model.
 
-```python
-from dataclasses import dataclass
-import pandas as pd
-
-@dataclass
-class MarketSnapshot:
-    df: pd.DataFrame              # primary instrument (1m or resampled)
-    correlated: dict              # {'ES': df_es, 'NQ': df_nq, 'YM': df_ym} for SMT
-    higher_timeframe_df: pd.DataFrame  # daily or 4H for bias context
-
-class MyModel:
-    def __init__(self, config: dict = None):
-        self.checks = []
-        self.config = config or {}
-
-    def log(self, item: str):
-        self.checks.append(item)
-
-    def generate_signal(self, snapshot: MarketSnapshot) -> dict:
-        # Return dict with at minimum:
-        # { 'actionable': bool, 'direction': 'long'|'short'|None,
-        #   'entry': float, 'stop': float, 'target': float, 'checks': list }
-        ...
-```
-
-**Rule of exclusion**: if any required component is missing, `actionable=False` and no trade is taken. All checklist items must pass simultaneously.
+**Rule of exclusion** (applies to every model): if any required component is missing, `actionable=False` and no trade is taken. All checklist items must pass simultaneously.
 
 ---
 
@@ -179,22 +133,18 @@ class MyModel:
 
 ---
 
-## Adding a New Strategy
-
-1. Run `/strategy-from-transcript` with the video transcript → review the notes file in `strategies/notes/` (and the relevant concept files under `knowledge/`)
-2. Decide the layer for each new piece of logic:
-   - **Single primitive** (e.g. a new session range detector) → `src/ict/concepts/<name>.py`, register with `@concept("<slug>")`
-   - **Multi-concept gate** reused across models (e.g. a new bias signal) → `src/ict/models/intermediate/<name>.py`
-   - **Full strategy** → `src/ict/models/<author>/<name>.py`
-3. Register the entry point with `@concept("<slug>", depends_on=["dep-slug", ...])` — list every concept/intermediate it directly calls
-4. Create (or update) the matching `knowledge/` markdown file; set `detection: implemented`
-5. Implement `generate_signal(snapshot)` using the checklist from the notes file
-6. Run `.venv/bin/python scripts/lineage.py --update-readme` to regenerate the README diagram
-7. Create `examples/<strategy_name>_example.py` to verify the model runs
-8. Backtest with a runner in `backtests/`; outputs land in `results/`
-
----
-
 ## Key Reference: Existing Plan
 
 `.github/prompts/plan-nqBacktestFramework.prompt.md` contains the detailed backtest framework design — consult it when building or extending the backtesting engine.
+
+---
+
+## Experiment Infrastructure
+
+Model config flags (`Model2022.DEFAULT_CONFIG`), named YAML configs, single-run backtests, `compare_runs.py`, and the `grid_search.py` sweep are all documented in **`configs/README.md`** — read it before running a config or grid search.
+
+---
+
+## Analysis Documents
+
+Quantitative backtest findings live in `analysis/`, organized by concept (mirroring `knowledge/`). The naming rule, required frontmatter, required sections, the never-edit-existing-files rule, and the what-goes-where table are in **`analysis/README.md`** — read and follow it whenever you write or update an analysis doc. Always add a row to that file's index table when you create a new analysis file.

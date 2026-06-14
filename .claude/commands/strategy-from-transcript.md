@@ -117,9 +117,28 @@ n. <Final trigger>
 <Any other observations from the transcript>
 ```
 
-### Step 4 — Confirm with the user
+### Step 4 — Screenshot review offer
 
-After writing the file, tell the user:
+After writing the file, identify any timestamp ranges in the transcript where the speaker
+references a chart visually but the text alone is ambiguous or incomplete. This typically
+happens when they say things like:
+
+- "you can see here…", "look at this…", "right here on the chart…"
+- Pointing at a specific candle, level, or formation without naming it explicitly
+- Referencing a price level or structure that isn't derivable from text alone
+
+List those timestamps (e.g. `7:21`, `20:25–23:45`) with a one-line note on what's unclear.
+Then ask the user:
+
+> "Would screenshots from these moments help clarify anything before I finalize the notes?
+> If so, paste them and I'll incorporate what I see."
+
+Wait for the user to respond. If they paste screenshots, read each one carefully and update
+the notes file with any corrections or additions before moving to Step 5.
+
+### Step 5 — Confirm with the user
+
+After the file is finalized (with or without screenshots), tell the user:
 - The file path where notes were saved
 - A brief summary of the strategy (2-3 sentences)
 - The open questions list so they can answer before you build code

@@ -1,0 +1,28 @@
+name: bias_4h_soft
+description: "Daily bias gate on, 4H soft (neutral 4H abstains) — current implementation"
+
+start_date: "2022-01-01"
+instrument: NQ
+use_daily_bias: true
+
+stop_mode: wick
+max_stop_pts: 20.0
+target_min_rr: 3.0
+
+daily_lookback: 30
+dealing_range_days: 60
+swing_lookback: 2
+
+four_h_gate: soft
+
+use_pdh_pdl: true
+use_ons: true
+use_chicago_prior: true
+use_chicago_same_day: true
+use_opening_range: true
+use_reh_rel: true
+
+killzones:
+  - ["02:00", "05:00"]
+  - ["07:00", "10:00"]
+  - ["13:30", "16:00"]

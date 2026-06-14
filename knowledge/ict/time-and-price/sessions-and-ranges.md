@@ -9,6 +9,8 @@ parameters:
   flout_ny: "3:00 PM - 12:00 AM (CBDR + Asia, used for projections)"
   opening_range_start: "09:30"   # NY start of the opening range (RTH cash open); e.g. 08:30 for the NY session-open range
   opening_range_minutes: 30
+  ons_ny: "05:00 – 09:15"        # Overnight Session — pre-market window from globex overnight to RTH open
+  chicago_ny: "09:15 – 12:00"   # Chicago session — CME pit open to midday; pools sweepable PM same-day or next-day
 detection: implemented
 ---
 
@@ -26,6 +28,16 @@ liquidity scaffolding:
   For index futures, the analogous use is projecting the afternoon/overnight
   consolidation height.
 - **Flout** — CBDR + Asia combined (3 PM–midnight), alternative projection base.
+- **Overnight Session (ONS)** — **05:00–09:15 NY**. The pre-market window from
+  globex overnight through to the RTH open. Its high/low are standing intraday
+  liquidity pools, often swept in the opening killzone or early RTH. Implemented
+  as `ons_range()` in `src/ict/concepts/sessions.py`.
+- **Chicago Session** — **09:15–12:00 NY**. CME pit session open through midday.
+  Its high/low are liquidity pools once the window closes (`formed_at = range_end`).
+  Two uses: (1) **same-day** — sweepable in the PM killzone (13:30–16:00 NY);
+  (2) **next-day** — carried forward as a standing pool alongside PDH/PDL, available
+  from the next session open. Implemented as `chicago_range()` in
+  `src/ict/concepts/sessions.py`.
 - **Opening Range (OR)** — the first 30 min after the **09:30 NY cash open** (RTH OR,
   the project default for `opening_range`); its high/low are intraday liquidity pools.
   `start_ny` can anchor the range to another session open (e.g. `08:30` for the NY
@@ -53,6 +65,11 @@ rather than the extreme; if ADR is exceeded, fib the ADR low→high for extensio
 
 - Compute ranges as `(max(high), min(low))` over the session mask (NY-local windows
   converted to UTC per date).
+- Overnight Session (ONS): high/low over `05:00–09:15` NY via `ons_range()`. Live pools
+  from `range_end`.
+- Chicago Session: high/low over `09:15–12:00` NY via `chicago_range()`. Same-day pool
+  with `formed_at = range_end` (noon); also carried as a next-day pool (`formed_at =
+  session_open`, like PDH/PDL). Sweepable in PM killzone (13:30–16:00 NY) same-day.
 - Opening range: high/low over `[start_ny, start_ny + minutes)` in NY local time
   (default `09:30` + 30 min). It becomes a sweepable pool only at `range_end`.
 - Standard-deviation projections: `proj_k = range_high + k * range_height` (and mirror

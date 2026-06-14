@@ -32,6 +32,8 @@ has lost its window — many models flatten at session close rather than hold.
 
 - Target = nearest level from the liquidity/PD-array registry in the trade direction,
   filtered to `beyond EQ` of the governing range.
+- **Target pools must be live**: filter out any opposing pool already run before entry
+  time (same first-breach rule as entry pools). Dead liquidity is not a draw target.
 - Compute and log `rr_planned` at signal time; gate on `rr_planned >= min_rr`.
 - Exit simulation order on each bar (conservative): stop before target when both are
   inside one bar's range (config: `intrabar_priority = stop_first`).

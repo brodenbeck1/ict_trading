@@ -30,6 +30,8 @@ Researched 2026-06-11. Times NY-local; project data UTC.
 ### price-action/ — state & delivery
 | Concept | Coverage | One-liner |
 |---|---|---|
+| [draw-on-liquidity](price-action/draw-on-liquidity.md) | partial | Weekly DOL framework: DXY bias → weekly draw → daily opposing sweep → intraday entry |
+| [failure-swing](price-action/failure-swing.md) | partial | FS/HPFS: untested candle extreme formed after a sweep+rejection; recursive — HPFS begets HPFS |
 | [pa-flow](price-action/pa-flow.md) | sparse | Consolidation / expansion / retracement / reversal state machine |
 | [voids-in-delivery](price-action/voids-in-delivery.md) | sparse | Inefficiencies as magnets + entry refinements |
 | [imbalances-to-liquidity](price-action/imbalances-to-liquidity.md) | sparse | Delivery alternates imbalance ↔ liquidity, on the cycle grid |
@@ -61,6 +63,7 @@ Researched 2026-06-11. Times NY-local; project data UTC.
 | Imbalances to liquidity | IRL ↔ ERL alternation |
 | OB raid rule | Order block + mandatory liquidity sweep |
 | Gap/VI entry override | FVG/VI refinement inside OB |
+| Failure swing / HPFS | Rejection block / untested swing extreme after stop hunt |
 
 ## Priority for deepening (transcript work)
 

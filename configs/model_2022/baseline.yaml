@@ -1,0 +1,28 @@
+name: baseline
+description: "No bias gate, wick stop (20pt cap), all pools — current production config"
+
+# Backtest settings
+start_date: "2024-11-01"
+instrument: NQ
+use_daily_bias: false
+
+# Stop placement
+stop_mode: wick
+max_stop_pts: 20.0
+
+# Target
+target_min_rr: 3.0
+
+# Pool set — all enabled
+use_pdh_pdl: true
+use_ons: true
+use_chicago_prior: true
+use_chicago_same_day: true
+use_opening_range: true
+use_reh_rel: true
+
+# Killzones: London (02-05 NY), NY AM (07-10 NY), PM (13:30-16 NY)
+killzones:
+  - ["02:00", "05:00"]
+  - ["07:00", "10:00"]
+  - ["13:30", "16:00"]

@@ -1,0 +1,22 @@
+name: with_bias
+description: "Daily bias gate re-enabled — measures how much the bias filter hurts/helps"
+
+start_date: "2024-11-01"
+instrument: NQ
+use_daily_bias: true
+
+stop_mode: wick
+max_stop_pts: 20.0
+target_min_rr: 3.0
+
+use_pdh_pdl: true
+use_ons: true
+use_chicago_prior: true
+use_chicago_same_day: true
+use_opening_range: true
+use_reh_rel: true
+
+killzones:
+  - ["02:00", "05:00"]
+  - ["07:00", "10:00"]
+  - ["13:30", "16:00"]

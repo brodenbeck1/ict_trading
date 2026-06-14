@@ -59,6 +59,36 @@ def opening_range(
     }
 
 
+def ons_range(
+    df: pd.DataFrame,
+    session_date: pd.Timestamp,
+) -> Optional[dict]:
+    """
+    Compute the high/low of the Overnight Session (ONS) on session_date.
+
+    ONS: 05:00–09:15 NY — the pre-market window bridging globex overnight to
+    the RTH open. Its high/low are intraday liquidity pools; see
+    knowledge/ict/time-and-price/sessions-and-ranges.md.
+    """
+    return session_high_low(df, session_date, start_ny='05:00', end_ny='09:15')
+
+
+def chicago_range(
+    df: pd.DataFrame,
+    session_date: pd.Timestamp,
+) -> Optional[dict]:
+    """
+    Compute the high/low of the Chicago session range on session_date.
+
+    Chicago: 09:15–12:00 NY — CME pit session open through midday. Its high/low
+    become liquidity pools once the window closes (formed_at = range_end). Can be
+    swept same-day in the PM killzone (13:30–16:00 NY), or carried to the next day
+    as a standing pool alongside PDH/PDL; see
+    knowledge/ict/time-and-price/sessions-and-ranges.md.
+    """
+    return session_high_low(df, session_date, start_ny='09:15', end_ny='12:00')
+
+
 def session_high_low(
     df: pd.DataFrame,
     session_date: pd.Timestamp,
